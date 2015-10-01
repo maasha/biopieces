@@ -1,0 +1,10 @@
+This directory contains configuration files for Biopieces.
+
+    bashrc  -  contains environment settings for bash shell environment
+
+
+Equivalent configuration files may be written for other shell types, tcsh, csh, etc.
+
+
+
+Martin A. Hansen, July 2008

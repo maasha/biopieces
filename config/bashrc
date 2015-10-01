@@ -1,0 +1,45 @@
+### >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+### DO NOT MAKE ANY CHANGES
+
+### Stuff that enables Biopieces.
+
+### BP_DIR, BP_DATA, BP_TMP, and BP_LOG should all be set in ~/.bashrc
+### see http://code.google.com/p/biopieces/wiki/Installation
+
+### The below bin directory should hold biopiece executables - regardsles of programming language.
+
+export BP_BIN="$BP_DIR/bp_bin"              # Directory with biopiece executables.
+
+### The following directories hold the biopiece libraries, modules, gems, etc - one per programming language.
+
+export BP_PERL="$BP_DIR/code_perl"          # Direcotory with Perl code.
+export BP_C="$BP_DIR/code_c"                # Direcotory with C code.
+export BP_PYTHON="$BP_DIR/code_python"      # Direcotory with Pyton code.
+export BP_RUBY="$BP_DIR/code_ruby"          # Direcotory with Ruby code.
+
+### This is the directory with the document root fro the Biopieces Genome Browser:
+
+export BP_WWW="$BP_DIR/www"                 # Direcotory with Biopieces Genome Browser.
+
+### Here we add the biopiece variable to the existing PATH.
+
+export PATH="$PATH:$BP_BIN"
+
+### Here we add the Biopieces Perl modules to PERL5LIB.
+
+export PERL5LIB="$PERL5LIB:$BP_PERL"
+
+### Here we add the Biopieces Ruby libraries to RUBYLIB.
+
+export RUBYLIB="$RUBYLIB:$BP_RUBY/lib"
+
+### Some useful aliases.
+
+alias bp_update="svn update $BP_DIR && svn update $BP_DIR/bp_usage"
+alias bp_test="$BP_DIR/bp_test/test_all"
+
+### >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+### Martin A. Hansen, June 2008
