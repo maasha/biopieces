@@ -1,0 +1,22 @@
+These are modules written by me (Martin A. Hansen aka Maasha).
+
+You are welcome to modify the code here, but do leave a note in
+the subroutines you change like this:
+
+    sub some_subroutine
+    {
+        # Martin A. Hansen, Jan 2008.
+
+        # Changed by <you>, Juli 2008. (fixed minor bug)
+        
+        ...
+    }
+
+You may also add new subroutines, but you should strongly consider
+adding your own Perl modules subdirectory. For more information, see:
+
+    ../biopieces/code_perl/README
+
+
+
+Martin A. Hansen, July 2008

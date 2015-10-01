@@ -1,0 +1,14 @@
+New developers should add their own subdirectory here for their own Perl code:
+
+    ../biopieces/code_perl/Maasha           # this is my code directory.
+    ../biopieces/code_perl/<new developer>  # this could be your new code directory.
+
+Finally, add your new Perl code directory to the PERL5LIB path in the configuration:
+
+    ../biopieces/bp_conf/bashrc  # look inside this file for information on how to do that.
+
+
+All done.
+
+
+Martin A. Hansen, July 2008.
