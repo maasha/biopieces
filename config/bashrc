@@ -9,14 +9,14 @@
 
 ### The below bin directory should hold biopiece executables - regardsles of programming language.
 
-export BP_BIN="$BP_DIR/bp_bin"              # Directory with biopiece executables.
+export BP_BIN="$BP_DIR/bin"                 # Directory with biopiece executables.
 
-### The following directories hold the biopiece libraries, modules, gems, etc - one per programming language.
+### The following directories hold the biopiece source, modules, gems, etc - one per programming language.
 
-export BP_PERL="$BP_DIR/code_perl"          # Direcotory with Perl code.
-export BP_C="$BP_DIR/code_c"                # Direcotory with C code.
-export BP_PYTHON="$BP_DIR/code_python"      # Direcotory with Pyton code.
-export BP_RUBY="$BP_DIR/code_ruby"          # Direcotory with Ruby code.
+export BP_PERL="$BP_DIR/src/perl"          # Direcotory with Perl code.
+export BP_C="$BP_DIR/src/c"                # Direcotory with C code.
+export BP_PYTHON="$BP_DIR/src/python"      # Direcotory with Pyton code.
+export BP_RUBY="$BP_DIR/src/ruby"          # Direcotory with Ruby code.
 
 ### This is the directory with the document root fro the Biopieces Genome Browser:
 
@@ -36,7 +36,6 @@ export RUBYLIB="$RUBYLIB:$BP_RUBY/lib"
 
 ### Some useful aliases.
 
-alias bp_update="svn update $BP_DIR && svn update $BP_DIR/bp_usage"
 alias bp_test="$BP_DIR/bp_test/test_all"
 
 ### >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
