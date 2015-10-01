@@ -1,0 +1,252 @@
+#!/usr/bin/python
+
+import os, string, sys, getopt, Args, optparse
+
+record_delimiter = "\n---\n"
+
+class Calc_density:
+	in_stream = None
+	out_stream = None
+	eo_buffer = False
+	buffer = ''
+	rec_dic = {}
+	rec_num = 0
+
+	density_dic = {}
+	win_size = 10000
+	step = win_size
+
+	###########################################
+	def __init__(self):
+		pass
+	###########################################
+
+	###########################################
+	def set_values(self, win_size, step):
+		#if step > win_size:
+		#	return False
+		self.win_size = win_size
+		self.step = step
+		return True
+	###########################################
+
+	###########################################
+	def open_streams(self, input_file, output_file):
+		if input_file == '':
+			self.in_stream = sys.stdin
+		else:
+			try:
+				self.in_stream = open(input_file, 'r')
+			except:
+				raise IOError
+
+		if output_file == '':
+			self.out_stream = sys.stdout
+		else:
+			try:
+				self.out_stream = open(output_file, 'w')
+			except:
+				raise IOError
+	###########################################
+
+	###########################################
+	def close_streams(self):
+		if self.in_stream:
+			self.in_stream.close()
+		if self.out_stream:
+			self.out_stream.close()
+	###########################################
+
+	###########################################
+	def get_record(self):
+		rec = ''
+		eof_flag = False
+		while not self.eo_buffer:
+			if self.in_stream.isatty():
+				eof_flag = True
+
+			if eof_flag:
+				if self.buffer == '':
+					self.eo_buffer = True
+					break
+			else:
+				tmp = self.in_stream.read(1000)
+			if not tmp:
+				eof_flag = True
+
+			self.buffer = self.buffer + tmp
+			delim_index = self.buffer.find(record_delimiter)
+			if delim_index >= 0:
+				rec = self.buffer[:delim_index]
+				self.buffer = self.buffer[delim_index + len(record_delimiter):]
+				break
+		return rec
+	###########################################
+
+	###########################################
+	def process_record(self, rec):
+		lines = rec.split("\n")
+		self.rec_num += 1
+		self.rec_dic[self.rec_num] = {}
+
+		chr = ''
+		chr_beg = -1
+		score = 1
+
+		for l in lines:
+			toks = l.split(": ")
+			self.rec_dic[self.rec_num][toks[0]] = toks[1]
+			if toks[0]=='SCORE':
+				score = string.atoi(toks[1])
+
+		chr = self.rec_dic[self.rec_num]["CHR"]
+		chr_beg = string.atoi(self.rec_dic[self.rec_num]["CHR_BEG"])
+
+		if not self.density_dic.has_key(chr):
+			self.density_dic[chr] = {}
+
+		k_cur = (chr_beg / step) * step
+		if chr_beg in range(k_cur, k_cur+win_size):
+			if not self.density_dic[chr].has_key(k_cur):
+				self.density_dic[chr][k_cur] = 0
+			self.density_dic[chr][k_cur] += score
+
+		tmp_k_cur = k_cur
+		while(1):
+			k_prev = tmp_k_cur - step
+			if not chr_beg in range(k_prev, k_prev+win_size):
+				break
+			if not self.density_dic[chr].has_key(k_prev):
+				self.density_dic[chr][k_prev] = 0
+			self.density_dic[chr][k_prev] += score
+			tmp_k_cur = k_prev
+
+		tmp_k_cur = k_cur
+		while(1):
+			k_next = tmp_k_cur + step
+			if not chr_beg in range(k_next, k_next+win_size):
+				break
+
+			if not self.density_dic[chr].has_key(k_next):
+				self.density_dic[chr][k_next] = 0
+			self.density_dic[chr][k_next] += score
+			tmp_k_cur = k_next
+
+		return self.rec_num
+	###########################################
+
+	###########################################
+	def put_record(self, r_num):
+		rec = self.rec_dic[r_num]
+		for k in rec.keys():
+			self.out_stream.write("%s: %s\n" % (k, rec[k]))
+		print "---"
+	###########################################
+
+	###########################################
+	def put_new_record(self):
+		chrs = self.density_dic.keys()
+		chrs.sort()
+		for chr in chrs:
+			max_k = max(self.density_dic[chr].keys())
+			for k in range(0, max_k+self.step, step):
+				chr_beg, chr_end = k, k+self.win_size
+				try:
+					count = self.density_dic[chr][k]
+				except:
+					count = 0
+				self.out_stream.write("WIN_CHR: %s\n" % (chr))
+				self.out_stream.write("WIN_CHR_BEG: %d\n" % (chr_beg))
+				self.out_stream.write("WIN_CHR_END: %d\n" % (chr_end))
+				self.out_stream.write("WIN_DENSITY: %d\n" % (count))
+				self.out_stream.write("---\n")
+	###########################################
+
+	###########################################
+	def print_usage(self, opt):
+		#print opt
+		bp_dir = os.environ['BP_DIR']
+		usage_path = bp_dir + os.path.sep + "bp_usage" + os.path.sep + "calc_density.wiki"
+		os.system("print_wiki -i %s %s" % (usage_path, opt))
+	###########################################
+
+
+# main
+
+den = Calc_density()
+
+try:
+	opts, args = getopt.getopt(sys.argv[1:], "I:O:?vxw:s:", ["stream_in=", "stream_out=", "help", "verbose", "no_stream", "window_size=", "step_size="])
+except getopt.GetoptError, err:
+	# print help information and exit:
+	print str(err) # will print something like "option -a not recognized"
+	den.print_usage("")
+	sys.exit(2)
+
+if len(opts)==0:
+	if os.isatty( sys.stdin.fileno() ):
+		den.print_usage("")
+		sys.exit(1)
+
+stream_in = ""
+stream_out = ""
+verbose = False
+
+win_size_flag = 0
+step_flag = 0
+
+for o, a in opts:
+	if o in ("-I", "--stream_in"):
+		stream_in = a
+	elif o in ("-O", "--stream_out"):
+		stream_out = a
+	elif o == "-?":
+		den.print_usage("-?")
+		sys.exit(1)
+	elif o == "--help":
+		den.print_usage("-?")
+		sys.exit(1)
+	elif o in ("-v", "--verbose"):
+		verbose = True
+	elif o in ("-w", "--window_size"):
+		win_size = string.atoi(a)
+		win_size_flag = 1
+	elif o in ("-s", "--step_size"):
+		step = string.atoi(a)
+		step_flag = 1
+	
+# default values
+if not win_size_flag:
+	win_size = 10000
+if not step_flag:
+	step = win_size		# default increment step is win_size
+
+if not den.set_values(win_size, step):
+	sys.stderr.write("ERROR!\n")
+	sys.stderr.write("increment step must not be larger than window size\n")
+	sys.exit(1)
+
+try:
+	den.open_streams(stream_in, stream_out)
+except:
+	sys.stderr.write("%s\n" % ("IOError"))
+	sys.exit(1)
+
+if len(opts)==0:
+	if not den.in_stream:
+		den.print_usage("")
+		sys.exit(1)
+
+
+while True:
+	rec = den.get_record()
+	if rec=='':
+		break
+	rec_num = den.process_record(rec)
+	den.put_record(rec_num)
+den.put_new_record()	# print out newly generated records. i.e., WIN_CHR, WIN_CHR_BEG, WIN_CHR_END and WIN_DENSITY for this script.
+
+
+den.close_streams()
+
+
