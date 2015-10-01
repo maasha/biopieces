@@ -1,0 +1,51 @@
+/* Martin Asser Hansen (mail@maasha.dk) Copyright (C) 2008 - All right reserved */
+
+#include "common.h"
+
+static void test_true();
+static void test_bool();
+
+int main()
+{
+    fprintf( stderr, "Running all tests for common.c\n" );
+
+    test_true();
+    test_bool();
+
+    fprintf( stderr, "Done\n\n" );
+
+    return EXIT_SUCCESS;
+}
+
+
+void test_true()
+{
+    fprintf( stderr, "   Testing true ... " );
+
+    assert( TRUE == 1 );
+    assert( FALSE == 0 );
+
+    fprintf( stderr, "OK\n" );
+}
+
+
+void test_bool()
+{
+    fprintf( stderr, "   Testing bool ... " );
+
+    bool answer;
+
+    answer = TRUE;
+
+    assert( answer == TRUE );
+    assert( answer == 1 );
+
+    answer = FALSE;
+
+    assert( answer == FALSE );
+    assert( answer == 0 );
+
+    fprintf( stderr, "OK\n" );
+}
+
+
