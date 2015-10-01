@@ -1,0 +1,14 @@
+New developers should add their own subdirectory here for their own code:
+
+    ../biopieces/code_ruby/lib/maasha           # this is my code directory.
+    ../biopieces/code_ruby/lib/<new developer>  # this could be your new code directory.
+
+Test code goes in:
+
+    ../biopieces/code_ruby/test/maasha           # this is my test directory.
+    ../biopieces/code_ruby/test/<new developer>  # this could be your new test directory.
+
+All done.
+
+
+Martin A. Hansen, May 2011.
