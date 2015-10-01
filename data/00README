@@ -1,0 +1,7 @@
+This directory contains add-hoc data files needed by Biopieces
+
+    human_cytobands.txt  -  Cytoband information for plot_karyogram
+    mouse_cytobands.txt  -  Cytoband information for plot_karyogram
+
+
+Martin A. Hansen, July 2008
