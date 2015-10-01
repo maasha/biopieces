@@ -1,0 +1,11 @@
+#!/bin/bash
+
+source "$BP_DIR/bp_test/lib/test.sh"
+
+run "$bp -I $in | sort_records -k SEQ -O $tmp"
+assert_no_diff $tmp $out.1
+clean
+
+run "$bp -I $in -c | sort_records -k SEQ -O $tmp"
+assert_no_diff $tmp $out.2
+clean

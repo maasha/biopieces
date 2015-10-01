@@ -1,0 +1,6 @@
+DUMMY: nothing
+---
+SEQ: atcgatcgatcg
+---
+SEQ: atcgatcgatcgATCGATCGATCG
+---

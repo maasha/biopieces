@@ -1,0 +1,23 @@
+#!/bin/bash
+
+source "$BP_DIR/bp_test/lib/test.sh"
+
+run "$bp -i $in -O $tmp"
+assert_no_diff $tmp $out.1
+clean
+
+run "$bp -i $in.gz -O $tmp"
+assert_no_diff $tmp $out.1
+clean
+
+run "$bp -i $in -k AC -O $tmp"
+assert_no_diff $tmp $out.2
+clean
+
+run "$bp -i $in -k AC -f CDS -O $tmp"
+assert_no_diff $tmp $out.3
+clean
+
+run "$bp -i $in -k AC -f CDS -q translation -O $tmp"
+assert_no_diff $tmp $out.4
+clean

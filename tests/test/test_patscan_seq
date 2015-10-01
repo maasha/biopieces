@@ -1,0 +1,27 @@
+#!/bin/bash
+
+source "$BP_DIR/bp_test/lib/test.sh"
+
+run "$bp -I $in.1 -p GACT -O $tmp"
+assert_no_diff $tmp $out.1
+clean
+
+run "$bp -I $in.1 -p GACT -c -O $tmp"
+assert_no_diff $tmp $out.2
+clean
+
+run "$bp -I $in.1 -p GACT -i -O $tmp"
+assert_no_diff $tmp $out.3
+clean
+
+run "$bp -I $in.1 -o -p GG -O $tmp"
+assert_no_diff $tmp $out.4
+clean
+
+run "$bp -I $in.2 -p RARP -O $tmp"
+assert_no_diff $tmp $out.5
+clean
+
+run "$bp -I $in.2 -p RARP -i -O $tmp"
+assert_no_diff $tmp $out.6
+clean

@@ -1,0 +1,41 @@
+#!/bin/bash
+
+source "$BP_DIR/bp_test/lib/test.sh"
+
+mkdir $tmp_dir
+run "$bp -I $in -d $tmp_dir -k SEQ_NAME -x"
+assert_no_diff_dir $tmp_dir $out.1
+clean
+rm -rf $tmp_dir
+
+mkdir $tmp_dir
+run "$bp -I $in -d $tmp_dir -k SEQ_LEN -x"
+assert_no_diff_dir $tmp_dir $out.2
+clean
+rm -rf $tmp_dir
+
+mkdir $tmp_dir
+run "$bp -I $in -d $tmp_dir -k SEQ_LEN -Z gzip -x"
+gunzip $tmp_dir/*.gz
+assert_no_diff_dir $tmp_dir $out.2
+clean
+rm -rf $tmp_dir
+
+mkdir $tmp_dir
+run "$bp -I $in -d $tmp_dir -k SEQ_LEN -Z bzip2 -x"
+bunzip2 $tmp_dir/*.bz2
+assert_no_diff_dir $tmp_dir $out.2
+clean
+rm -rf $tmp_dir
+
+mkdir $tmp_dir
+run "$bp -I $in -d $tmp_dir -k SEQ_LEN -w 4 -x"
+assert_no_diff_dir $tmp_dir $out.3
+clean
+rm -rf $tmp_dir
+
+mkdir $tmp_dir
+run "$bp -I $in -d $tmp_dir -k SEQ_NAME -p Length -x"
+assert_no_diff_dir $tmp_dir $out.4
+clean
+rm -rf $tmp_dir

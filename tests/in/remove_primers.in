@@ -1,0 +1,20 @@
+SEQ_NAME: test1
+SEQ: tcagtACTGAGCTAGCAGCGGTGCGccgcaaacgacggtgaccaggcgcaggcggcgagcaccgcattctgcggTGCTGGACTGGGTGGAGCACatcaa
+SEQ_LEN: 99
+---
+SEQ_NAME: test2
+SEQ: ACTGAGCTAGCAGCGGTGCGccgcaaacgacggtgaccaggcgcaggcggcgagcaccgcattctgcggTGCTGGACTGGGTGGAGCAC
+SEQ_LEN: 89
+---
+SEQ_NAME: test3
+SEQ: ccgcaaacgacggtgaccaggcgcaggcggcgagcaccgcattctgcggTGCTGGACTGGGTGGAGCAC
+SEQ_LEN: 69
+---
+SEQ_NAME: test4
+SEQ: TGCTGGACTGGGTGGAGCACatcaa
+SEQ_LEN: 25
+---
+SEQ_NAME: test5
+SEQ: TGCTGGACTGGGTGGAGCAC
+SEQ_LEN: 20
+---

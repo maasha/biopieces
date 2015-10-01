@@ -1,0 +1,88 @@
+SEQ_NAME: test_full_length_match_forward
+SEQ: TCGTATGCCGTCTTCTGCTT
+SEQ_LEN: 20
+---
+SEQ_NAME: test_begin_match_forward
+SEQ: TCGTATGCCGTCTTCTGCTTactacgt
+SEQ_LEN: 27
+---
+SEQ_NAME: test_middle_match_forward
+SEQ: actgactgaTCGTATGCCGTCTTCTGCTTactacgt
+SEQ_LEN: 36
+---
+SEQ_NAME: test_end_match_forward
+SEQ: gactgaTCGTATGCCGTCTTCTGCTT
+SEQ_LEN: 26
+---
+SEQ_NAME: test_full_length_match_forward_rc
+SEQ: AAGCAGAAGACGGCATACGA
+SEQ_LEN: 20
+---
+SEQ_NAME: test_begin_match_forward_rc
+SEQ: AAGCAGAAGACGGCATACGAactacgt
+SEQ_LEN: 27
+---
+SEQ_NAME: test_middle_match_forward_rc
+SEQ: actgactgaAAGCAGAAGACGGCATACGAactacgt
+SEQ_LEN: 36
+---
+SEQ_NAME: test_end_match_forward_rc
+SEQ: gactgaAAGCAGAAGACGGCATACGA
+SEQ_LEN: 26
+---
+SEQ_NAME: test_full_length_match_reverse
+SEQ: TGACTACGACTACGACTACT
+SEQ_LEN: 20
+---
+SEQ_NAME: test_begin_match_reverse
+SEQ: TGACTACGACTACGACTACTactacgt
+SEQ_LEN: 27
+---
+SEQ_NAME: test_middle_match_reverse
+SEQ: actgactgaTGACTACGACTACGACTACTactacgt
+SEQ_LEN: 36
+---
+SEQ_NAME: test_end_match_reverse
+SEQ: gactgaTGACTACGACTACGACTACT
+SEQ_LEN: 26
+---
+SEQ_NAME: test_full_length_match_reverse_rc
+SEQ: AGTAGTCGTAGTCGTAGTCA
+SEQ_LEN: 20
+---
+SEQ_NAME: test_begin_match_reverse_rc
+SEQ: AGTAGTCGTAGTCGTAGTCAactacgt
+SEQ_LEN: 27
+---
+SEQ_NAME: test_middle_match_reverse_rc
+SEQ: actgactgaAGTAGTCGTAGTCGTAGTCAactacgt
+SEQ_LEN: 36
+---
+SEQ_NAME: test_end_match_reverse_rc
+SEQ: gactgaAGTAGTCGTAGTCGTAGTCA
+SEQ_LEN: 26
+---
+SEQ_NAME: test_forward_and_reverse_match
+SEQ: actgactgaTCGTATGCCGTCTTCTGCTTactacgtactgactgaTGACTACGACTACGACTACTactacgt
+SEQ_LEN: 72
+---
+SEQ_NAME: test_forward_partial_match
+SEQ: GTCTTCTGCTTactacgtactgactgaTGACTACGACTACGACTACTactacgt
+SEQ_LEN: 54
+---
+SEQ_NAME: test_reverse_partial_match
+SEQ: actgactgaTCGTATGCCGTCTTCTGCTTactacgtactgactgaTGACTACGAC
+SEQ_LEN: 55
+---
+SEQ_NAME: test_forward_and_reverse_match_with_mismatch
+SEQ: actgactgaTCGTAccCCGTCTTCTGCTTactacgtactgactgaTGACTACGAggACGACTACTactacgt
+SEQ_LEN: 72
+---
+SEQ_NAME: test_forward_and_reverse_match_with_insertion
+SEQ: actgactgaTCGTATCGTCTTCTGCTTactacgtactgactgaTGACTACGACCGACTACTactacgt
+SEQ_LEN: 68
+---
+SEQ_NAME: test_forward_and_reverse_match_with_deletion
+SEQ: actgactgaTCGTATGaaCCGTCTTCTGCTTactacgtactgactgaTGACTACGACTAaaCGACTACTactacgt
+SEQ_LEN: 76
+---

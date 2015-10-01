@@ -1,0 +1,23 @@
+#!/bin/bash
+
+source "$BP_DIR/bp_test/lib/test.sh"
+
+run "$bp -f CGATCGAGCT -r AGTCAGTCAT -I $in -O $tmp"
+assert_no_diff $tmp $out.1
+clean
+
+run "$bp -f CGATCGAGCT -r AGTCAGTCAT -m 1 -I $in -O $tmp"
+assert_no_diff $tmp $out.2
+clean
+
+run "$bp -F CGATCGAGCT -r AGTCAGTCAT -I $in -O $tmp"
+assert_no_diff $tmp $out.3
+clean
+
+run "$bp -f CGATCGAGCT -R AGTCAGTCAT -I $in -O $tmp"
+assert_no_diff $tmp $out.4
+clean
+
+run "$bp -F CGATCGAGCT -R AGTCAGTCAT -I $in -O $tmp"
+assert_no_diff $tmp $out.5
+clean

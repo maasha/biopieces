@@ -1,0 +1,23 @@
+#!/bin/bash
+
+source "$BP_DIR/bp_test/lib/test.sh"
+
+run "$bp -I $in.1 -O $tmp"
+assert_no_diff $tmp $out.1
+clean
+
+run "$bp -I $in.2 -O $tmp"
+assert_no_diff $tmp $out.2
+clean
+
+run "$bp -I $in.3 -O $tmp"
+assert_no_diff $tmp $out.3
+clean
+
+run "$bp -I $in.4 -O $tmp"
+assert_no_diff $tmp $out.4
+clean
+
+run "$bp -I $in.1 -p tblastx -O $tmp"
+assert_no_diff $tmp $out.5
+clean

@@ -1,0 +1,21 @@
+#!/bin/bash
+
+source "$BP_DIR/bp_test/lib/test.sh"
+
+run "$bp -I $in -o $tmp -x"
+assert_no_diff $tmp $out.1
+clean
+
+run "$bp -I $in -w 4 -o $tmp -x"
+assert_no_diff $tmp $out.2
+clean
+
+run "$bp -I $in -w 4 -Z gzip -o $tmp.gz -x"
+gunzip $tmp.gz
+assert_no_diff $tmp $out.3
+clean
+
+run "$bp -I $in -w 4 -Z bzip2 -o $tmp.bz2 -x"
+bunzip2 $tmp.bz2
+assert_no_diff $tmp $out.3
+clean

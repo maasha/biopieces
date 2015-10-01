@@ -1,0 +1,62 @@
+#!/bin/bash
+
+source "$BP_DIR/bp_test/lib/test.sh"
+
+if [ -f $log_file ]; then
+    rm $log_file
+fi
+
+test_perl
+test_perl_module "Inline"
+test_perl_module "SVG"
+test_perl_module "Time::HiRes"
+test_ruby
+test_ruby_gem "gnuplot"
+test_ruby_gem "narray"
+test_ruby_gem "RubyInline"
+test_ruby_gem "terminal-table"
+test_aux_program "blastall"
+test_aux_program "blat"
+test_aux_program "bwa"
+test_aux_program "bowtie"
+test_aux_program "bowtie2"
+test_aux_program "formatdb"
+test_aux_program "hmmsearch"
+test_aux_program "gnuplot"
+test_aux_program "idba_hybrid"
+test_aux_program "muscle"
+test_aux_program "mummer"
+test_aux_program "mysql"
+test_aux_program "prodigal"
+test_aux_program "Ray"
+test_aux_program "scan_for_matches"
+test_aux_program "usearch"
+test_aux_program "velveth"
+test_aux_program "velvetg"
+test_aux_program "vmatch"
+
+count=0
+time0=`date +%s`
+
+for i in `ls "$BP_DIR/bp_test/test/"`; do
+    "$BP_DIR/bp_test/test/$i"
+    count=$[ $count + 1 ]
+done
+
+time1=`date +%s`
+time=$[ $time1 - $time0 ]
+
+test_count=`cat $log_file | wc -l | sed "s/ //g"`
+test_ok=`grep -c "OK" $log_file`
+test_fail=`grep -c "FAIL" $log_file`
+test_warn=`grep -c "WARNING" $log_file`
+
+report="Biopieces tested: $count  Tests run: $test_count  OK: $test_ok  FAIL: $test_fail  WARNING: $test_warn  Time: $time secs"
+
+if (($test_fail > 0)); then
+    echo_red "$report"
+elif (($test_warn > 0)); then
+    echo_yellow "$report"
+else
+    echo_green "$report"
+fi

@@ -1,0 +1,15 @@
+#!/bin/bash
+
+source "$BP_DIR/bp_test/lib/test.sh"
+
+run "$bp -I $in -k SEQ_LEN -O $tmp"
+assert_no_diff $tmp $out.1
+clean
+
+run "$bp -I $in -k SEQ_LENn -O $tmp"
+assert_no_diff $tmp $out.2
+clean
+
+run "$bp -I $in -k SEQ_LEN -r -O $tmp"
+assert_no_diff $tmp $out.3
+clean

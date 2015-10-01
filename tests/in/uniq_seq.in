@@ -1,0 +1,12 @@
+SEQ_NAME: test1
+SEQ: ATGC
+SEQ_LEN: 4
+---
+SEQ_NAME: test2
+SEQ: ATGC
+SEQ_LEN: 4
+---
+SEQ_NAME: test3
+SEQ: GCAT
+SEQ_LEN: 4
+---

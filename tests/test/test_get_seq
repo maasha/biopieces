@@ -1,0 +1,27 @@
+#!/bin/bash
+
+source "$BP_DIR/bp_test/lib/test.sh"
+
+run_quiet "create_seq_index -I $in.1 -d $tmp_dir -i test -x"
+
+run "$bp -i $tmp_dir/test -s test1 -b 10 -O $tmp"
+assert_no_diff $tmp $out.1
+clean
+
+run "$bp -i $tmp_dir/test -s test1 -e 10 -O $tmp"
+assert_no_diff $tmp $out.2
+clean
+
+run "$bp -i $tmp_dir/test -s test1 -l 10 -O $tmp"
+assert_no_diff $tmp $out.3
+clean
+
+run "$bp -i $tmp_dir/test -s test1 -b 10 -l 10 -O $tmp"
+assert_no_diff $tmp $out.4
+clean
+
+run "$bp -I $in.2 -i $tmp_dir/test -O $tmp"
+assert_no_diff $tmp $out.5
+clean
+
+rm -rf $tmp_dir

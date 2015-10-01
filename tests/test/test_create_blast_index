@@ -1,0 +1,11 @@
+#!/bin/bash
+
+source "$BP_DIR/bp_test/lib/test.sh"
+
+run "$bp -I $in.1 -d $tmp_dir -i 'index' -x"
+assert_files_exists "$tmp_dir/index.nin" "$tmp_dir/index.nhr" "$tmp_dir/index.nsq"
+rm -rf $tmp_dir
+
+run "$bp -I $in.2 -d $tmp_dir -i 'index' -x"
+assert_files_exists "$tmp_dir/index.pin" "$tmp_dir/index.phr" "$tmp_dir/index.psq"
+rm -rf $tmp_dir

@@ -1,0 +1,23 @@
+#!/bin/bash
+
+source "$BP_DIR/bp_test/lib/test.sh"
+
+run "$bp -I $in -O $tmp"
+assert_no_diff $tmp $out.1
+clean
+
+run "$bp -I $in -O $tmp -x"
+assert_no_diff $tmp $out.2
+clean
+
+run "$bp -I $in -k V0 -O $tmp"
+assert_no_diff $tmp $out.3
+clean
+
+run "$bp -I $in -K V0 -O $tmp"
+assert_no_diff $tmp $out.4
+clean
+
+run "$bp -I $in -o $tmp -x"
+assert_no_diff $tmp $out.5
+clean

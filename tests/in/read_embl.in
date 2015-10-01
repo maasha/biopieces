@@ -1,0 +1,203 @@
+ID   U49845; SV 1; linear; genomic DNA; STD; FUN; 5028 BP.
+XX
+AC   U49845;
+XX
+DT   07-MAY-1996 (Rel. 47, Created)
+DT   25-MAR-2010 (Rel. 104, Last updated, Version 5)
+XX
+DE   Saccharomyces cerevisiae TCP1-beta gene, partial cds; and Axl2p (AXL2) and
+DE   Rev7p (REV7) genes, complete cds.
+XX
+KW   .
+XX
+OS   Saccharomyces cerevisiae (baker's yeast)
+OC   Eukaryota; Fungi; Dikarya; Ascomycota; Saccharomycotina; Saccharomycetes;
+OC   Saccharomycetales; Saccharomycetaceae; Saccharomyces.
+XX
+RN   [1]
+RP   1-5028
+RX   PUBMED; 8846915.
+RA   Roemer T., Madden K., Chang J., Snyder M.;
+RT   "Selection of axial growth sites in yeast requires Axl2p, a novel plasma
+RT   membrane glycoprotein";
+RL   Genes Dev. 10(7):777-793(1996).
+XX
+RN   [2]
+RP   1-5028
+RA   Roemer T.;
+RT   ;
+RL   Submitted (22-FEB-1996) to the INSDC.
+RL   Biology, Yale University, New Haven, CT 06520, USA
+XX
+DR   Ensembl-Gn; YIL139C; Saccharomyces_cerevisiae.
+DR   Ensembl-Gn; YIL140W; Saccharomyces_cerevisiae.
+DR   Ensembl-Gn; YIL142W; Saccharomyces_cerevisiae.
+DR   Ensembl-Tr; YIL139C; Saccharomyces_cerevisiae.
+DR   Ensembl-Tr; YIL140W; Saccharomyces_cerevisiae.
+DR   Ensembl-Tr; YIL142W; Saccharomyces_cerevisiae.
+DR   EnsemblGenomes; YIL139C; Saccharomyces_cerevisiae.
+DR   EnsemblGenomes; YIL140W; Saccharomyces_cerevisiae.
+DR   EnsemblGenomes; YIL142W; Saccharomyces_cerevisiae.
+XX
+FH   Key             Location/Qualifiers
+FH
+FT   source          1..5028
+FT                   /organism="Saccharomyces cerevisiae"
+FT                   /chromosome="IX"
+FT                   /mol_type="genomic DNA"
+FT                   /db_xref="taxon:4932"
+FT   mRNA            <1..>206
+FT                   /product="TCP1-beta"
+FT   CDS             <1..206
+FT                   /codon_start=3
+FT                   /product="TCP1-beta"
+FT                   /db_xref="GOA:P39076"
+FT                   /db_xref="InterPro:IPR002194"
+FT                   /db_xref="InterPro:IPR002423"
+FT                   /db_xref="InterPro:IPR012716"
+FT                   /db_xref="InterPro:IPR017998"
+FT                   /db_xref="PDB:3P9D"
+FT                   /db_xref="UniProtKB/Swiss-Prot:P39076"
+FT                   /protein_id="AAA98665.1"
+FT                   /translation="SSIYNGISTSGLDLNNGTIADMRQLGIVESYKLKRAVVSSASEAA
+FT                   EVLLRVDNIIRARPRTANRQHM"
+FT   gene            <687..>3158
+FT                   /gene="AXL2"
+FT   mRNA            <687..>3158
+FT                   /gene="AXL2"
+FT                   /product="Axl2p"
+FT   CDS             687..3158
+FT                   /codon_start=1
+FT                   /gene="AXL2"
+FT                   /product="Axl2p"
+FT                   /note="plasma membrane glycoprotein"
+FT                   /db_xref="GOA:P38928"
+FT                   /db_xref="InterPro:IPR006644"
+FT                   /db_xref="InterPro:IPR008009"
+FT                   /db_xref="InterPro:IPR013783"
+FT                   /db_xref="InterPro:IPR014805"
+FT                   /db_xref="InterPro:IPR015919"
+FT                   /db_xref="SGD:S000001402"
+FT                   /db_xref="UniProtKB/Swiss-Prot:P38928"
+FT                   /protein_id="AAA98666.1"
+FT                   /translation="MTQLQISLLLTATISLLHLVVATPYEAYPIGKQYPPVARVNESFT
+FT                   FQISNDTYKSSVDKTAQITYNCFDLPSWLSFDSSSRTFSGEPSSDLLSDANTTLYFNVI
+FT                   LEGTDSADSTSLNNTYQFVVTNRPSISLSSDFNLLALLKNYGYTNGKNALKLDPNEVFN
+FT                   VTFDRSMFTNEESIVSYYGRSQLYNAPLPNWLFFDSGELKFTGTAPVINSAIAPETSYS
+FT                   FVIIATDIEGFSAVEVEFELVIGAHQLTTSIQNSLIINVTDTGNVSYDLPLNYVYLDDD
+FT                   PISSDKLGSINLLDAPDWVALDNATISGSVPDELLGKNSNPANFSVSIYDTYGDVIYFN
+FT                   FEVVSTTDLFAISSLPNINATRGEWFSYYFLPSQFTDYVNTNVSLEFTNSSQDHDWVKF
+FT                   QSSNLTLAGEVPKNFDKLSLGLKANQGSQSQELYFNIIGMDSKITHSNHSANATSTRSS
+FT                   HHSTSTSSYTSSTYTAKISSTSAAATSSAPAALPAANKTSSHNKKAVAIACGVAIPLGV
+FT                   ILVALICFLIFWRRRRENPDDENLPHAISGPDLNNPANKPNQENATPLNNPFDDDASSY
+FT                   DDTSIARRLAALNTLKLDNHSATESDISSVDEKRDSLSGMNTYNDQFQSQSKEELLAKP
+FT                   PVQPPESPFFDPQNRSSSVYMDSEPAVNKSWRYTGNLSPVSDIVRDSYGSQKTVDTEKL
+FT                   FDLEAPEKEKRTSRDVTMSSLDPWNSNISPSPVRKSVTPSPYNVTKHRNRHLQNIQDSQ
+FT                   SGKNGITPTTMSTSSSDDFVPVKDGENFCWVHSMEPDRRPSKKRLVDFSNKSNVNVGQV
+FT                   KDIHGRIPEML"
+FT   gene            complement(<3300..>4037)
+FT                   /gene="REV7"
+FT   mRNA            complement(<3300..>4037)
+FT                   /gene="REV7"
+FT                   /product="Rev7p"
+FT   CDS             complement(3300..4037)
+FT                   /codon_start=1
+FT                   /gene="REV7"
+FT                   /product="Rev7p"
+FT                   /db_xref="GOA:P38927"
+FT                   /db_xref="InterPro:IPR003511"
+FT                   /db_xref="SGD:S000001401"
+FT                   /db_xref="UniProtKB/Swiss-Prot:P38927"
+FT                   /protein_id="AAA98667.1"
+FT                   /translation="MNRWVEKWLRVYLKCYINLILFYRNVYPPQSFDYTTYQSFNLPQF
+FT                   VPINRHPALIDYIEELILDVLSKLTHVYRFSICIINKKNDLCIEKYVLDFSELQHVDKD
+FT                   DQIITETEVFDEFRSSLNSLIMHLEKLPKVNDDTITFEAVINAIELELGHKLDRNRRVD
+FT                   SLEEKAEIERDSNWVKCQEDENLPDNNGFQPPKIKLTSLVGSDVGPLIIHQFSEKLISG
+FT                   DDKILNGVYSQYEEGESIFGSLF"
+XX
+SQ   Sequence 5028 BP; 1510 A; 1074 C; 835 G; 1609 T; 0 other;
+     gatcctccat atacaacggt atctccacct caggtttaga tctcaacaac ggaaccattg        60
+     ccgacatgag acagttaggt atcgtcgaga gttacaagct aaaacgagca gtagtcagct       120
+     ctgcatctga agccgctgaa gttctactaa gggtggataa catcatccgt gcaagaccaa       180
+     gaaccgccaa tagacaacat atgtaacata tttaggatat acctcgaaaa taataaaccg       240
+     ccacactgtc attattataa ttagaaacag aacgcaaaaa ttatccacta tataattcaa       300
+     agacgcgaaa aaaaaagaac aacgcgtcat agaacttttg gcaattcgcg tcacaaataa       360
+     attttggcaa cttatgtttc ctcttcgagc agtactcgag ccctgtctca agaatgtaat       420
+     aatacccatc gtaggtatgg ttaaagatag catctccaca acctcaaagc tccttgccga       480
+     gagtcgccct cctttgtcga gtaattttca cttttcatat gagaacttat tttcttattc       540
+     tttactctca catcctgtag tgattgacac tgcaacagcc accatcacta gaagaacaga       600
+     acaattactt aatagaaaaa ttatatcttc ctcgaaacga tttcctgctt ccaacatcta       660
+     cgtatatcaa gaagcattca cttaccatga cacagcttca gatttcatta ttgctgacag       720
+     ctactatatc actactccat ctagtagtgg ccacgcccta tgaggcatat cctatcggaa       780
+     aacaataccc cccagtggca agagtcaatg aatcgtttac atttcaaatt tccaatgata       840
+     cctataaatc gtctgtagac aagacagctc aaataacata caattgcttc gacttaccga       900
+     gctggctttc gtttgactct agttctagaa cgttctcagg tgaaccttct tctgacttac       960
+     tatctgatgc gaacaccacg ttgtatttca atgtaatact cgagggtacg gactctgccg      1020
+     acagcacgtc tttgaacaat acataccaat ttgttgttac aaaccgtcca tccatctcgc      1080
+     tatcgtcaga tttcaatcta ttggcgttgt taaaaaacta tggttatact aacggcaaaa      1140
+     acgctctgaa actagatcct aatgaagtct tcaacgtgac ttttgaccgt tcaatgttca      1200
+     ctaacgaaga atccattgtg tcgtattacg gacgttctca gttgtataat gcgccgttac      1260
+     ccaattggct gttcttcgat tctggcgagt tgaagtttac tgggacggca ccggtgataa      1320
+     actcggcgat tgctccagaa acaagctaca gttttgtcat catcgctaca gacattgaag      1380
+     gattttctgc cgttgaggta gaattcgaat tagtcatcgg ggctcaccag ttaactacct      1440
+     ctattcaaaa tagtttgata atcaacgtta ctgacacagg taacgtttca tatgacttac      1500
+     ctctaaacta tgtttatctc gatgacgatc ctatttcttc tgataaattg ggttctataa      1560
+     acttattgga tgctccagac tgggtggcat tagataatgc taccatttcc gggtctgtcc      1620
+     cagatgaatt actcggtaag aactccaatc ctgccaattt ttctgtgtcc atttatgata      1680
+     cttatggtga tgtgatttat ttcaacttcg aagttgtctc cacaacggat ttgtttgcca      1740
+     ttagttctct tcccaatatt aacgctacaa ggggtgaatg gttctcctac tattttttgc      1800
+     cttctcagtt tacagactac gtgaatacaa acgtttcatt agagtttact aattcaagcc      1860
+     aagaccatga ctgggtgaaa ttccaatcat ctaatttaac attagctgga gaagtgccca      1920
+     agaatttcga caagctttca ttaggtttga aagcgaacca aggttcacaa tctcaagagc      1980
+     tatattttaa catcattggc atggattcaa agataactca ctcaaaccac agtgcgaatg      2040
+     caacgtccac aagaagttct caccactcca cctcaacaag ttcttacaca tcttctactt      2100
+     acactgcaaa aatttcttct acctccgctg ctgctacttc ttctgctcca gcagcgctgc      2160
+     cagcagccaa taaaacttca tctcacaata aaaaagcagt agcaattgcg tgcggtgttg      2220
+     ctatcccatt aggcgttatc ctagtagctc tcatttgctt cctaatattc tggagacgca      2280
+     gaagggaaaa tccagacgat gaaaacttac cgcatgctat tagtggacct gatttgaata      2340
+     atcctgcaaa taaaccaaat caagaaaacg ctacaccttt gaacaacccc tttgatgatg      2400
+     atgcttcctc gtacgatgat acttcaatag caagaagatt ggctgctttg aacactttga      2460
+     aattggataa ccactctgcc actgaatctg atatttccag cgtggatgaa aagagagatt      2520
+     ctctatcagg tatgaataca tacaatgatc agttccaatc ccaaagtaaa gaagaattat      2580
+     tagcaaaacc cccagtacag cctccagaga gcccgttctt tgacccacag aataggtctt      2640
+     cttctgtgta tatggatagt gaaccagcag taaataaatc ctggcgatat actggcaacc      2700
+     tgtcaccagt ctctgatatt gtcagagaca gttacggatc acaaaaaact gttgatacag      2760
+     aaaaactttt cgatttagaa gcaccagaga aggaaaaacg tacgtcaagg gatgtcacta      2820
+     tgtcttcact ggacccttgg aacagcaata ttagcccttc tcccgtaaga aaatcagtaa      2880
+     caccatcacc atataacgta acgaagcatc gtaaccgcca cttacaaaat attcaagact      2940
+     ctcaaagcgg taaaaacgga atcactccca caacaatgtc aacttcatct tctgacgatt      3000
+     ttgttccggt taaagatggt gaaaattttt gctgggtcca tagcatggaa ccagacagaa      3060
+     gaccaagtaa gaaaaggtta gtagattttt caaataagag taatgtcaat gttggtcaag      3120
+     ttaaggacat tcacggacgc atcccagaaa tgctgtgatt atacgcaacg atattttgct      3180
+     taattttatt ttcctgtttt attttttatt agtggtttac agatacccta tattttattt      3240
+     agtttttata cttagagaca tttaatttta attccattct tcaaatttca tttttgcact      3300
+     taaaacaaag atccaaaaat gctctcgccc tcttcatatt gagaatacac tccattcaaa      3360
+     attttgtcgt caccgctgat taatttttca ctaaactgat gaataatcaa aggccccacg      3420
+     tcagaaccga ctaaagaagt gagttttatt ttaggaggtt gaaaaccatt attgtctggt      3480
+     aaattttcat cttcttgaca tttaacccag tttgaatccc tttcaatttc tgctttttcc      3540
+     tccaaactat cgaccctcct gtttctgtcc aacttatgtc ctagttccaa ttcgatcgca      3600
+     ttaataactg cttcaaatgt tattgtgtca tcgttgactt taggtaattt ctccaaatgc      3660
+     ataatcaaac tatttaagga agatcggaat tcgtcgaaca cttcagtttc cgtaatgatc      3720
+     tgatcgtctt tatccacatg ttgtaattca ctaaaatcta aaacgtattt ttcaatgcat      3780
+     aaatcgttct ttttattaat aatgcagatg gaaaatctgt aaacgtgcgt taatttagaa      3840
+     agaacatcca gtataagttc ttctatatag tcaattaaag caggatgcct attaatggga      3900
+     acgaactgcg gcaagttgaa tgactggtaa gtagtgtagt cgaatgactg aggtgggtat      3960
+     acatttctat aaaataaaat caaattaatg tagcatttta agtataccct cagccacttc      4020
+     tctacccatc tattcataaa gctgacgcaa cgattactat tttttttttc ttcttggatc      4080
+     tcagtcgtcg caaaaacgta taccttcttt ttccgacctt ttttttagct ttctggaaaa      4140
+     gtttatatta gttaaacagg gtctagtctt agtgtgaaag ctagtggttt cgattgactg      4200
+     atattaagaa agtggaaatt aaattagtag tgtagacgta tatgcatatg tatttctcgc      4260
+     ctgtttatgt ttctacgtac ttttgattta tagcaagggg aaaagaaata catactattt      4320
+     tttggtaaag gtgaaagcat aatgtaaaag ctagaataaa atggacgaaa taaagagagg      4380
+     cttagttcat cttttttcca aaaagcaccc aatgataata actaaaatga aaaggatttg      4440
+     ccatctgtca gcaacatcag ttgtgtgagc aataataaaa tcatcacctc cgttgccttt      4500
+     agcgcgtttg tcgtttgtat cttccgtaat tttagtctta tcaatgggaa tcataaattt      4560
+     tccaatgaat tagcaatttc gtccaattct ttttgagctt cttcatattt gctttggaat      4620
+     tcttcgcact tcttttccca ttcatctctt tcttcttcca aagcaacgat ccttctaccc      4680
+     atttgctcag agttcaaatc ggcctctttc agtttatcca ttgcttcctt cagtttggct      4740
+     tcactgtctt ctagctgttg ttctagatcc tggtttttct tggtgtagtt ctcattatta      4800
+     gatctcaagt tattggagtc ttcagccaat tgctttgtat cagacaattg actctctaac      4860
+     ttctccactt cactgtcgag ttgctcgttt ttagcggaca aagatttaat ctcgttttct      4920
+     ttttcagtgt tagattgctc taattctttg agctgttctc tcagctcctc atatttttct      4980
+     tgccatgact cagattctaa ttttaagcta ttcaatttct ctttgatc                   5028
+//

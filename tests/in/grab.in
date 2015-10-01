@@ -1,0 +1,13 @@
+SEQ_NAME: test1
+SEQ_LEN: 10
+SEQ: MDESEQATHP
+---
+SEQ_NAME: test2
+SEQ_LEN: 8
+SEQ: ATCGatcg
+---
+PAT_NAME: test2
+PAT: SEQ
+---
+COUNT: 3
+---

@@ -1,0 +1,19 @@
+#!/bin/bash
+
+source "$BP_DIR/bp_test/lib/test.sh"
+
+run "$bp -I $in -O $tmp"
+assert_no_diff $tmp $out.1
+clean
+
+run "$bp -I $in -k CUSTOM_KEY -O $tmp"
+assert_no_diff $tmp $out.2
+clean
+
+run "$bp -I $in -p PREFIX -O $tmp"
+assert_no_diff $tmp $out.3
+clean
+
+run "$bp -I $in -o 5 -O $tmp"
+assert_no_diff $tmp $out.4
+clean

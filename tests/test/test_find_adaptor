@@ -1,0 +1,43 @@
+#!/bin/bash
+
+source "$BP_DIR/bp_test/lib/test.sh"
+
+run "$bp -m 0 -i 0 -d 0 -f TCGTATGCCGTCTTCTGCTT -I $in -O $tmp"
+assert_no_diff $tmp $out.1
+clean
+
+run "$bp -m 0 -i 0 -d 0 -F TCGTATGCCGTCTTCTGCTT -I $in -O $tmp"
+assert_no_diff $tmp $out.2
+clean
+
+run "$bp -m 0 -i 0 -d 0 -r TGACTACGACTACGACTACT -I $in -O $tmp"
+assert_no_diff $tmp $out.3
+clean
+
+run "$bp -m 0 -i 0 -d 0 -R TGACTACGACTACGACTACT -I $in -O $tmp"
+assert_no_diff $tmp $out.4
+clean
+
+run "$bp -m 0 -i 0 -d 0 -f TCGTATGCCGTCTTCTGCTT -r TGACTACGACTACGACTACT -I $in -O $tmp"
+assert_no_diff $tmp $out.5
+clean
+
+run "$bp -m 0 -i 0 -d 0 -f TCGTATGCCGTCTTCTGCTT -l 1 -r TGACTACGACTACGACTACT -I $in -O $tmp"
+assert_no_diff $tmp $out.6
+clean
+
+run "$bp -m 0 -i 0 -d 0 -f TCGTATGCCGTCTTCTGCTT -l 1 -r TGACTACGACTACGACTACT -L 1 -I $in -O $tmp"
+assert_no_diff $tmp $out.7
+clean
+
+run "$bp -m 10 -i 0 -d 0 -f TCGTATGCCGTCTTCTGCTT -r TGACTACGACTACGACTACT -I $in -O $tmp"
+assert_no_diff $tmp $out.8
+clean
+
+run "$bp -m 0 -i 10 -d 0 -f TCGTATGCCGTCTTCTGCTT -r TGACTACGACTACGACTACT -I $in -O $tmp"
+assert_no_diff $tmp $out.9
+clean
+
+run "$bp -m 0 -i 0 -d 10 -f TCGTATGCCGTCTTCTGCTT -r TGACTACGACTACGACTACT -I $in -O $tmp"
+assert_no_diff $tmp $out.10
+clean

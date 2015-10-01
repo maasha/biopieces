@@ -1,0 +1,20 @@
+SEQ_NAME: test1
+SEQ: _cgta.cgta-ctacg~actcgtacg-
+SEQ_LEN: 27
+---
+SEQ_NAME: test2
+SEQ: _cgta.cgta-ctacg~actcgtacg-
+SEQ_LEN: 27
+---
+SEQ_NAME: test3
+SEQ: _cgta.cgta-ctacg~actcgtacg-
+SEQ_LEN: 27
+---
+SEQ_NAME: test4
+SEQ: _cgta.cgta-ctacg~actcgtacg-
+SEQ_LEN: 27
+---
+SEQ_NAME: test5
+SEQ: _cgta.cgtagctacg~actcgtacg-
+SEQ_LEN: 27
+---

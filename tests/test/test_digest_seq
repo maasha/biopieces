@@ -1,0 +1,19 @@
+#!/bin/bash
+
+source "$BP_DIR/bp_test/lib/test.sh"
+
+run "$bp -p GGATCC -c 1 -I $in -O $tmp"
+assert_no_diff $tmp $out.1
+clean
+
+run "$bp -p GGACTT -c 1 -I $in -O $tmp"
+assert_no_diff $tmp $out.2
+clean
+
+run "$bp -p GGATCC -c 1000 -I $in -O $tmp"
+assert_no_diff $tmp $out.3
+clean
+
+run "$bp -p GGATCC -c -1000 -I $in -O $tmp"
+assert_no_diff $tmp $out.4
+clean

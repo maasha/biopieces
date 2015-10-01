@@ -1,0 +1,43 @@
+#!/bin/bash
+
+source "$BP_DIR/bp_test/lib/test.sh"
+
+run "$bp -I $in -p SEQ -O $tmp"
+assert_no_diff $tmp $out.1
+clean
+
+run "$bp -I $in -p SEQ,COUNT -O $tmp"
+assert_no_diff $tmp $out.2
+clean
+
+run "$bp -I $in -P $in.pat -O $tmp"
+assert_no_diff $tmp $out.3
+clean
+
+run "$bp -I $in -p SEQ -i -O $tmp"
+assert_no_diff $tmp $out.4
+clean
+
+run "$bp -I $in -p SEQ -K -O $tmp"
+assert_no_diff $tmp $out.5
+clean
+
+run "$bp -I $in -p SEQ -V -O $tmp"
+assert_no_diff $tmp $out.6
+clean
+
+run "$bp -I $in -p SEQ -k PAT -O $tmp"
+assert_no_diff $tmp $out.7
+clean
+
+run "$bp -I $in -r a -k SEQ -O $tmp"
+assert_no_diff $tmp $out.8
+clean
+
+run "$bp -I $in -r a -k SEQ -c -O $tmp"
+assert_no_diff $tmp $out.9
+clean
+
+run "$bp -I $in -e 'SEQ_LEN<10' -O $tmp"
+assert_no_diff $tmp $out.10
+clean

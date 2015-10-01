@@ -1,0 +1,38 @@
+SEQ_NAME: test
+SEQ: GATCGATCGTacgagcagcatctgacgtatcgatcgttgattagttgctagctatgcagtctacgacgagcaTGCTAGCTAG
+SEQ_LEN: 82
+SCORES: @ABCDEFGHIJKLMNOPQRSTUVWXYZ[\]^_`abcdefghhgfedcba`_^]\[ZYXWVUTSRQPONMLKJIHGFEDChhh
+ADAPTOR_POS_LEFT: 0
+ADAPTOR_LEN_LEFT: 10
+ADAPTOR_PAT_LEFT: gatcgatcgt
+---
+SEQ_NAME: test
+SEQ: GATCGATCGTacgagcagcatctgacgtatcgatcgttgattagttgctagctatgcagtctacgacgagcaTGCTAGCTAG
+SEQ_LEN: 82
+SCORES: @ABCDEFGHIJKLMNOPQRSTUVWXYZ[\]^_`abcdefghhgfedcba`_^]\[ZYXWVUTSRQPONMLKJIHGFEDChhh
+ADAPTOR_POS_RIGHT: 72
+ADAPTOR_LEN_RIGHT: 10
+ADAPTOR_PAT_RIGHT: tgctagctag
+---
+SEQ_NAME: test
+SEQ: GATCGATCGTacgagcagcatctgacgtatcgatcgttgattagttgctagctatgcagtctacgacgagcaTGCTAGCTAG
+SEQ_LEN: 82
+SCORES: @ABCDEFGHIJKLMNOPQRSTUVWXYZ[\]^_`abcdefghhgfedcba`_^]\[ZYXWVUTSRQPONMLKJIHGFEDChhh
+ADAPTOR_POS_LEFT: 0
+ADAPTOR_LEN_LEFT: 10
+ADAPTOR_PAT_LEFT: gatcgatcgt
+ADAPTOR_POS_RIGHT: 72
+ADAPTOR_LEN_RIGHT: 10
+ADAPTOR_PAT_RIGHT: tgctagctag
+---
+SEQ_NAME: test
+SEQ: GATCGATCGTacgagcagcatctgacgtatcgatcgttgattagttgctagctatgcagtctacgacgagcaTGCTAGCTAG
+SEQ_LEN: 82
+SCORES: @ABCDEFGHIJKLMNOPQRSTUVWXYZ[\]^_`abcdefghhgfedcba`_^]\[ZYXWVUTSRQPONMLKJIHGFEDChhh
+ADAPTOR_POS_LEFT: 72
+ADAPTOR_LEN_LEFT: 10
+ADAPTOR_PAT_LEFT: tgctagctag
+ADAPTOR_POS_RIGHT: 0
+ADAPTOR_LEN_RIGHT: 10
+ADAPTOR_PAT_RIGHT: gatcgatcgt
+---
