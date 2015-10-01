@@ -1,0 +1,130 @@
+#!/usr/bin/env perl
+
+# Copyright (C) 2007-2009 Martin A. Hansen.
+
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+
+# http://www.gnu.org/copyleft/gpl.html
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> DESCRIPTION <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# Split the values of a key into new key/value pairs.
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+use warnings;
+use strict;
+use Maasha::Biopieces;
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+my ( $options, $in, $out, $record, $beg, $end, $len );
+
+$options = Maasha::Biopieces::parse_options(
+    [
+        { long => 'beg', short => 'b', type => 'uint', mandatory => 'no', default => undef, allowed => undef, disallowed => undef },
+        { long => 'end', short => 'e', type => 'uint', mandatory => 'no', default => undef, allowed => undef, disallowed => undef },
+        { long => 'len', short => 'l', type => 'uint', mandatory => 'no', default => undef, allowed => undef, disallowed => 0 },
+    ]   
+);
+
+$in  = Maasha::Biopieces::read_stream( $options->{ "stream_in" } );
+$out = Maasha::Biopieces::write_stream( $options->{ "stream_out" } );
+
+if ( not defined $options->{ "beg" } or $options->{ "beg" } < 0 ) {
+    $beg = 0;
+} else {
+    $beg = $options->{ "beg" } - 1;   # correcting for start offset
+}
+
+if ( defined $options->{ "end" } and $options->{ "end" } - 1 < $beg ) {
+    $end = $beg - 1;
+} elsif ( defined $options->{ "end" } ) {
+    $end = $options->{ "end" } - 1;   # correcting for start offset
+}
+
+$len = $options->{ "len" };
+
+#    print "beg->$beg,  end->$end,  len->$len\n";
+
+while ( $record = Maasha::Biopieces::get_record( $in ) ) 
+{
+    if ( $record->{ "SEQ" } )
+    {
+        if ( defined $beg and defined $end )
+        {
+            if ( $end - $beg + 1 > length $record->{ "SEQ" } )
+            {
+                $record->{ "SEQ" }    = substr $record->{ "SEQ" }, $beg;
+                $record->{ "SCORES" } = substr $record->{ "SEQ" }, $beg if $record->{ "SCORES" };
+            }
+            else
+            {
+                $record->{ "SEQ" }    = substr $record->{ "SEQ" }, $beg, $end - $beg + 1;
+                $record->{ "SCORES" } = substr $record->{ "SCORES" }, $beg, $end - $beg + 1 if $record->{ "SCORES" };
+            }
+        }
+        elsif ( defined $beg and defined $len )
+        {
+            if ( $len > length $record->{ "SEQ" } )
+            {
+                $record->{ "SEQ" }    = substr $record->{ "SEQ" }, $beg;
+                $record->{ "SCORES" } = substr $record->{ "SCORES" }, $beg if $record->{ "SCORES" };
+            }
+            else
+            {
+                $record->{ "SEQ" }    = substr $record->{ "SEQ" }, $beg, $len;
+                $record->{ "SCORES" } = substr $record->{ "SCORES" }, $beg, $len if $record->{ "SCORES" };
+            }
+        }
+        elsif ( defined $beg )
+        {
+            $record->{ "SEQ" }    = substr $record->{ "SEQ" }, $beg;
+            $record->{ "SCORES" } = substr $record->{ "SCORES" }, $beg if $record->{ "SCORES" };
+        }
+
+        $record->{ "SEQ_LEN" } = length $record->{ "SEQ" };
+    }
+
+    Maasha::Biopieces::put_record( $record, $out );
+}
+
+Maasha::Biopieces::close_stream( $in );
+Maasha::Biopieces::close_stream( $out );
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+BEGIN
+{
+    Maasha::Biopieces::status_set();
+}
+
+
+END
+{
+    Maasha::Biopieces::status_log();
+}
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+__END__

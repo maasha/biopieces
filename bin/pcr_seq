@@ -1,0 +1,218 @@
+#!/usr/bin/env ruby
+
+# Copyright (C) 2007-2010 Martin A. Hansen.
+
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+
+# http://www.gnu.org/copyleft/gpl.html
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# This program is part of the Biopieces framework (www.biopieces.org).
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> DESCRIPTION <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# Runs virtual PCR on sequences in the stream.
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+require 'maasha/biopieces'
+require 'maasha/fasta'
+require 'maasha/seq'
+
+class Pcr
+  def initialize(tmpdir, infile, options)
+    @infile = infile
+
+    pattern    = Pattern.new(options[:forward], options[:reverse], options[:max_dist])
+    @pat_files = pattern.save(tmpdir)
+  end
+
+  # Run scan_for_matches using different pattern files on the subject
+  # FASTA file and return a list of the result files.
+  def run
+    outfiles = []
+
+    @pat_files.each do |pat_file|
+      outfile = pat_file.sub("pat", "fna")
+
+      command =  "scan_for_matches"
+      # command << " -c"
+      command << " -o 1"
+      command << " #{pat_file}"
+      command << " < #{@infile}"
+      command << " > #{outfile}"
+
+      system(command)
+      raise "Command failed: #{command}" unless $?.success?
+
+      outfiles << outfile
+    end
+
+    outfiles
+  end
+end
+
+class Pattern
+  attr_accessor :forward, :reverse
+
+  # Split a primer pattern in the form of ATCG[3,2,1] into
+  # sequence and match descriptor, reverse complement the 
+  # primer and append the match descriptor: CGAT[3,2,1].
+  def self.revcomp(pattern)
+    if pattern.match(/^(\w+)(\[.+\])?/)
+      primer     = $1
+      descriptor = $2
+    else
+      raise "Failed splitting pattern: #{pattern}"
+    end
+
+    seq      = Seq.new
+    seq.seq  = primer
+    seq.type = :dna
+    seq.reverse!.complement!
+
+    descriptor ? seq.seq + descriptor : seq.seq
+  end
+
+  def initialize(forward, reverse, max_dist)
+    @forward  = forward
+    @reverse  = reverse
+    @max_dist = max_dist
+  end
+
+  # For each primer pair we need to check 4 possible
+  # combinations that can give rise to PCR products:
+  # - forward and reverse (the intended product)
+  # - forward and revcomp forward
+  # - revcomp reverse and reverse
+  # - revcomp reverse and revcomp forward
+  # Thus we create 4 pattern files and return
+  # the file names.
+  def save(tmpdir)
+    forward = @forward
+    reverse = @reverse
+    revcomp_forward = Pattern.revcomp(forward)
+    revcomp_reverse = Pattern.revcomp(reverse)
+
+    files = []
+
+    file = File.join(tmpdir, "forward_reverse.pat")
+    self.forward = forward
+    self.reverse = reverse
+    save_pattern(file)
+    files << file
+
+    file = File.join(tmpdir, "forward_forward.pat")
+    self.forward = forward
+    self.reverse = revcomp_forward
+    save_pattern(file)
+    files << file
+
+    file = File.join(tmpdir, "reverse_reverse.pat")
+    self.forward = revcomp_reverse
+    self.reverse = reverse
+    save_pattern(file)
+    files << file
+
+    file = File.join(tmpdir, "reverse_forward.pat")
+    self.forward = revcomp_reverse
+    self.reverse = revcomp_forward
+    save_pattern(file)
+    files << file
+
+    files
+  end
+
+  private
+
+  # Method to output a pattern.
+  def to_s
+    "#{@forward} 1 ... #{@max_dist} #{@reverse}"
+  end
+
+  # Save a pattern to file
+  def save_pattern(file)
+    File.open(file, "w") do |ios|
+      ios.puts self
+    end
+  end
+end
+
+casts = []
+casts << {:long=>'forward',    :short=>'f', :type=>'string', :mandatory=>false, :default=>nil,  :allowed=>nil, :disallowed=>nil}
+casts << {:long=>'forward_rc', :short=>'F', :type=>'string', :mandatory=>false, :default=>nil,  :allowed=>nil, :disallowed=>nil}
+casts << {:long=>'reverse',    :short=>'r', :type=>'string', :mandatory=>false, :default=>nil,  :allowed=>nil, :disallowed=>nil}
+casts << {:long=>'reverse_rc', :short=>'R', :type=>'string', :mandatory=>false, :default=>nil,  :allowed=>nil, :disallowed=>nil}
+casts << {:long=>'max_dist',   :short=>'m', :type=>'uint',   :mandatory=>true,  :default=>5000, :allowed=>nil, :disallowed=>"0"}
+
+options = Biopieces.options_parse(ARGV, casts)
+tmpdir  = Biopieces.mktmpdir
+infile  = File.join(tmpdir, "in.fna")
+
+if options[:forward_rc]
+  options[:forward] = Pattern.revcomp(options[:forward_rc])
+end
+
+if options[:reverse_rc]
+  options[:reverse] = Pattern.revcomp(options[:reverse_rc])
+end
+
+raise ArgumentError, "no adaptor specified" unless options[:forward] or options[:reverse]
+Biopieces.open(options[:stream_in], options[:stream_out]) do |input, output|
+  Fasta.open(infile, "w") do |ios|
+    input.each_record do |record|
+      output.puts record
+
+      if record[:SEQ]
+        entry = Seq.new_bp(record)
+        ios.puts entry.to_fasta
+      end
+    end
+  end
+
+  outfiles = Pcr.new(tmpdir, infile, options).run
+
+  outfiles.each do |outfile|
+    next if File.size(outfile) == 0
+
+    Fasta.open(outfile, "r") do |ios|
+      ios.each do |entry|
+        record = entry.to_bp
+        record[:REC_TYPE] = "PCR"
+        record[:STRAND]   = "+"
+        record[:TYPE]     = File.basename(outfile).sub(".fna", "").upcase
+        record[:SEQ_NAME].match(/(.+):\[(\d+),(\d+)\]$/)
+        record[:SEQ_NAME] = $1
+        record[:PCR_BEG]  = $2.to_i
+        record[:PCR_END]  = $3.to_i
+
+        if record[:PCR_BEG] > record[:PCR_END]
+          record[:PCR_BEG], record[:PCR_END] = record[:PCR_END], record[:PCR_BEG]
+          record[:STRAND] = "-"
+        end
+
+        output.puts record
+      end
+    end
+  end
+end
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+__END__

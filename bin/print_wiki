@@ -1,0 +1,80 @@
+#!/usr/bin/env perl
+
+# Copyright (C) 2007-2009 Martin A. Hansen.
+
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+
+# http://www.gnu.org/copyleft/gpl.html
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> DESCRIPTION <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# Prints a wiki page in ASCII format.
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+use warnings;
+use strict;
+use Data::Dumper;
+use Maasha::Biopieces;
+use Maasha::Gwiki;
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+my ( $options, $default, $wiki, $lines );
+
+$default = $ENV{ 'BP_DIR' } . "/bp_usage/" . ( split "/", $0 )[ -1 ]. ".wiki";
+
+$options = Maasha::Biopieces::parse_options(
+    [
+        { long => 'data_in', short => 'i', type => 'file!', mandatory => 'no', default => $default, allowed => undef, disallowed => undef },
+    ]   
+);
+
+$wiki = Maasha::Gwiki::gwiki_read( $options->{ 'data_in' } );
+
+( $wiki->[ 2 ], $wiki->[ 3 ], $wiki->[ 0 ], $wiki->[ 1 ] ) = ( $wiki->[ 0 ], $wiki->[ 1 ], $wiki->[ 2 ], $wiki->[ 3 ] );
+
+if ( not $options->{ "help" } ) {
+    @{ $wiki } = grep { $_->[ 0 ]->{ 'SECTION' } =~ /Biopiece|summary|Usage|Options|Help/ } @{ $wiki };
+}
+
+$lines = Maasha::Gwiki::gwiki2ascii( $wiki );
+
+print STDERR "$_\n" foreach @{ $lines };
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+BEGIN
+{
+    Maasha::Biopieces::status_set();
+}
+
+
+END
+{
+    Maasha::Biopieces::status_log();
+}
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+__END__

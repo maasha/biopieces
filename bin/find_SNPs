@@ -1,0 +1,105 @@
+#!/usr/bin/env ruby
+
+# Copyright (C) 2007-2013 Martin A. Hansen.
+
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+
+# http://www.gnu.org/copyleft/gpl.html
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# This program is part of the Biopieces framework (www.biopieces.org).
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> DESCRIPTION <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# Find SNPs in records of SAM type in the stream.
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+require 'maasha/biopieces'
+require 'pp'
+
+casts = []
+casts << {:long=>'coverage', :short=>'c', :type=>'flag', :mandatory=>false, :default=>nil, :allowed=>nil, :disallowed=>nil}
+
+options = Biopieces.options_parse(ARGV, casts)
+
+snp_hash = Hash.new { |hash, key| hash[key] = Hash.new { |h, k| h[k] = Hash.new(0) } }
+cov_hash = Hash.new { |hash, key| hash[key] = Hash.new(0) }
+
+Biopieces.open(options[:stream_in], options[:stream_out]) do |input, output|
+  input.each_record do |record|
+    output.puts record
+
+    if record[:ALIGN] and
+       record[:S_ID]  and
+       record[:S_BEG] and
+       record[:ALIGN] != '.'
+
+       record[:ALIGN].split(',').each do |snp|
+         pos, event = snp.split(':')
+
+         pos = pos.to_i + record[:S_BEG].to_i
+
+         snp_hash[record[:S_ID].to_sym][pos][event.to_sym] += 1
+       end
+    end
+
+    if options[:coverage] and 
+       record[:S_ID]      and
+       record[:S_BEG]     and
+       record[:S_END]
+      (record[:S_BEG].to_i .. record[:S_END].to_i).each do |i|
+        cov_hash[record[:S_ID].to_sym][i] += 1
+      end
+    end
+  end
+
+  snp_hash.each_pair do |s_id, pos_hash|
+    new_record = {}
+    new_record[:REC_TYPE] = 'SNP'
+    new_record[:S_ID]     = s_id
+
+    pos_hash.each_pair do |pos, event_hash|
+      new_record[:POS]      = pos
+      new_record[:COVERAGE] = cov_hash[s_id][pos] if options[:coverage]
+
+      event_hash.each_pair do |event, count|
+        new_record[:EVENT]     = event
+        new_record[:SNP_COUNT] = count
+
+        before, after = event.to_s.split('>')
+
+        if before == '-'
+          type = 'INSERTION'
+        elsif after == '-'
+          type = 'DELETION'
+        else
+          type = 'MISMATCH'
+        end
+
+         new_record[:TYPE] = type
+      end
+
+      output.puts new_record
+    end
+  end
+end
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+__END__

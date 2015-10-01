@@ -1,0 +1,155 @@
+#!/usr/bin/env ruby
+
+# Copyright (C) 2007-2013 Martin A. Hansen.
+
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+
+# http://www.gnu.org/copyleft/gpl.html
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# Plot the nucleotide distribution in percent of sequences in the stream.
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+require 'maasha/biopieces'
+require 'gnuplot'
+require 'pp'
+
+terminals = "dumb,x11,aqua,post,pdf,png,svg"
+title     = "Stacked Histogram"
+
+casts = []
+casts << {:long=>'no_stream', :short=>'x', :type=>'flag',   :mandatory=>false, :default=>nil,    :allowed=>nil,       :disallowed=>nil}
+casts << {:long=>'cols',      :short=>'c', :type=>'string', :mandatory=>true,  :default=>nil,    :allowed=>nil,       :disallowed=>nil}
+casts << {:long=>'rows',      :short=>'r', :type=>'string', :mandatory=>true,  :default=>nil,    :allowed=>nil,       :disallowed=>nil}
+casts << {:long=>'data_out',  :short=>'o', :type=>'file',   :mandatory=>false, :default=>nil,    :allowed=>nil,       :disallowed=>nil}
+casts << {:long=>'terminal',  :short=>'t', :type=>'string', :mandatory=>false, :default=>'dumb', :allowed=>terminals, :disallowed=>nil}
+casts << {:long=>'title',     :short=>'T', :type=>'string', :mandatory=>false, :default=>title,  :allowed=>nil,       :disallowed=>nil}
+casts << {:long=>'xlabel',    :short=>'X', :type=>'string', :mandatory=>false, :default=>nil,    :allowed=>nil,       :disallowed=>nil}
+casts << {:long=>'ylabel',    :short=>'Y', :type=>'string', :mandatory=>false, :default=>nil,    :allowed=>nil,       :disallowed=>nil}
+
+options = Biopieces.options_parse(ARGV, casts)
+options[:xlabel] ||= options[:cols].capitalize
+options[:ylabel] ||= options[:rows].capitalize
+
+class PlotData
+  include Enumerable
+
+  def initialize()
+    @data       = Hash.new { |h, k| h[k] = Hash.new(0) }
+    @seen_cols  = {}
+    @seen_rows  = {}
+    @table      = []
+  end
+
+  def add(row, col)
+    @data[col][row] += 1
+    @seen_cols[col]  = true
+    @seen_rows[row]  = true
+  end
+
+  def each
+    tabulize() if @table.empty?
+
+    @table.each do |row|
+      yield row
+    end
+  end
+
+  def row_titles(i)
+    @seen_rows.keys[i]
+  end
+
+  def col_titles
+    titles = []
+
+    @seen_cols.keys.each_with_index do |col, i|
+      titles << %{"#{col}" #{i}}
+    end
+
+    "(" + titles.join(", ") + ")"
+  end
+
+  private
+
+  def tabulize
+    @seen_rows.size.times { @table << Array.new(@seen_cols.size, 0) }  # table init
+
+    i = 0
+
+    @seen_cols.each_key do |col|
+      j = 0
+
+      @seen_rows.each_key do |row|
+        @table[j][i] = @data[col][row]
+
+        j += 1
+      end
+
+      i += 1
+    end
+
+    @table
+  end
+end
+
+data = PlotData.new()
+
+Biopieces.open(options[:stream_in], options[:stream_out]) do |input, output|
+  input.each_record do |record|
+    cols = record[options[:cols].to_sym]
+    rows = record[options[:rows].to_sym]
+
+    if cols and rows
+      data.add(rows, cols)
+    end
+
+    output.puts record unless options[:no_stream]
+  end
+end
+
+Gnuplot.open do |gp|
+  Gnuplot::Plot.new(gp) do |plot|
+    plot.terminal options[:terminal]
+    plot.title    options[:title]
+    plot.xlabel   options[:xlabel]
+    plot.ylabel   options[:ylabel]
+    plot.output   options[:data_out] || "/dev/stderr"
+    plot.ytics    "out"
+    plot.auto     "fix"
+    plot.key      "outside right top vertical Left reverse enhanced autotitles columnhead nobox"
+    plot.key      "invert samplen 4 spacing 1 width 0 height 0"
+    plot.style    "fill solid 0.5 border"
+    plot.style    "histogram rowstacked"
+    plot.style    "data histograms"
+    plot.boxwidth "0.75 absolute"
+    plot.xtics    "out"
+    plot.xtics    "norangelimit"
+    plot.xtics    data.col_titles
+
+    data.each_with_index do |row, i|
+      plot.data << Gnuplot::DataSet.new(row.unshift(0)) do |ds|
+        ds.using = "1:xtic(2)"
+        ds.title = data.row_titles(i)
+      end
+    end
+  end
+end
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+__END__

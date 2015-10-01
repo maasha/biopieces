@@ -1,0 +1,129 @@
+#!/usr/bin/env perl
+
+# Copyright (C) 2007-2009 Martin A. Hansen.
+
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+
+# http://www.gnu.org/copyleft/gpl.html
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> DESCRIPTION <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# Get an EMBL entry from the MySQL database and flatfiles.
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+use warnings;
+use strict;
+use Data::Dumper;
+use Maasha::SQL;
+use Maasha::Biopieces;
+use Maasha::Filesys;
+use Maasha::EMBL;
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+my ( $options, $user, $password, $database, $table, $dbh, $in, $out, $record, $entry, @ids, $id, $file, $offset, $len, $results, $result, $fh, %fh_hash );
+
+$user     = Maasha::Biopieces::biopiecesrc( "MYSQL_USER" );
+$password = Maasha::Biopieces::biopiecesrc( "MYSQL_PASSWORD" );
+$database = Maasha::Biopieces::biopiecesrc( "EMBL_DATABASE" );
+$table    = Maasha::Biopieces::biopiecesrc( "EMBL_TABLE" );
+
+$options = Maasha::Biopieces::parse_options(
+    [
+        { long => 'user',       short => 'u', type => 'string', mandatory => 'no', default => $user,     allowed => undef, disallowed => undef },
+        { long => 'password',   short => 'p', type => 'string', mandatory => 'no', default => $password, allowed => undef, disallowed => undef },
+        { long => 'database',   short => 'd', type => 'string', mandatory => 'no', default => $database, allowed => undef, disallowed => undef },
+        { long => 'table',      short => 't', type => 'string', mandatory => 'no', default => $table,    allowed => undef, disallowed => undef },
+        { long => 'ids',        short => 'i', type => 'list',   mandatory => 'no', default => undef,     allowed => undef, disallowed => undef },
+        { long => 'keys',       short => 'k', type => 'list',   mandatory => 'no', default => undef,     allowed => undef, disallowed => undef },
+        { long => 'features',   short => 'f', type => 'list',   mandatory => 'no', default => undef,     allowed => undef, disallowed => undef },
+        { long => 'qualifiers', short => 'q', type => 'list',   mandatory => 'no', default => undef,     allowed => undef, disallowed => undef },
+    ]   
+);
+
+$in  = Maasha::Biopieces::read_stream( $options->{ "stream_in" } );
+$out = Maasha::Biopieces::write_stream( $options->{ "stream_out" } );
+
+if ( not Maasha::SQL::database_exists( $options->{ 'database' }, $options->{ 'user' }, $options->{ 'password' } ) ) {
+    Maasha::Common::error( qq(Database "$options->{ 'database' }" don't exists) );
+}
+
+$dbh = Maasha::SQL::connect( $options->{ 'database' }, $options->{ 'user' }, $options->{ 'password' } );
+
+if ( not Maasha::SQL::table_exists( $dbh, $options->{ 'table' } ) ) {
+    Maasha::Common::error( qq(Table "$options->{ 'table' }" don't exists) );
+}
+
+@ids = @{ $options->{ 'ids' } } if defined $options->{ 'ids' };
+
+while ( $record = Maasha::Biopieces::get_record( $in ) ) 
+{
+    push @ids, $record->{ 'ID' } if exists $record->{ 'ID' };
+
+    Maasha::Biopieces::put_record( $record, $out );
+}
+
+foreach $id ( @ids )
+{
+    $results = Maasha::SQL::query_array( $dbh, qq(SELECT FILE,OFFSET,LEN from $options->{ 'table' } WHERE ID="$id") );
+
+    foreach $result ( @{ $results } )
+    {
+        ( $file, $offset, $len ) =  @{ $result };
+
+        if ( not exists $fh_hash{ $file } )
+        {
+            $fh = Maasha::Filesys::file_read_open( $file );
+
+            $fh_hash{ $file } = $fh;
+        }
+
+        $entry = Maasha::Filesys::file_read( $fh_hash{ $file }, $offset, $len );
+
+        map { Maasha::Biopieces::put_record( $_, $out ) } Maasha::EMBL::embl2biopieces( $entry, $options );
+    }
+}
+
+map { close $fh_hash{ $_ } } keys %fh_hash;
+
+Maasha::Biopieces::close_stream( $in );
+Maasha::Biopieces::close_stream( $out );
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+BEGIN
+{
+    Maasha::Biopieces::status_set();
+}
+
+
+END
+{
+    Maasha::SQL::disconnect( $dbh ) if $dbh;
+    Maasha::Biopieces::status_log();
+}
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+__END__

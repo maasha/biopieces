@@ -1,0 +1,90 @@
+#!/usr/bin/env ruby
+
+# Copyright (C) 2007-2011 Martin A. Hansen.
+
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+
+# http://www.gnu.org/copyleft/gpl.html
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# This program is part of the Biopieces framework (www.biopieces.org).
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> DESCRIPTION <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# Run Uclust on sequences in the stream.
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+require 'maasha/biopieces'
+require 'maasha/fasta'
+require 'maasha/usearch'
+
+casts = []
+casts << {long: 'no_sort',  short: 'n', type: 'flag',  mandatory: false, default: nil, allowed: nil, disallowed: nil}
+casts << {long: 'comp',     short: 'c', type: 'flag',  mandatory: false, default: nil, allowed: nil, disallowed: nil}
+casts << {long: 'identity', short: 'i', type: 'float', mandatory: true,  default: 0.9, allowed: nil, disallowed: nil}
+casts << {long: 'cpus',     short: 'C', type: 'uint',  mandatory: false, default: 1,   allowed: nil, disallowed: "0"}
+
+options = Biopieces.options_parse(ARGV, casts)
+
+tmpdir       = Biopieces.mktmpdir
+file_records = File.join(tmpdir, "data.stream")
+file_fasta   = File.join(tmpdir, "in.fna")
+file_uclust  = File.join(tmpdir, "out.uc")
+
+Biopieces.open(options[:stream_in], file_records) do |input, output|
+  Fasta.open(file_fasta, 'w') do |fasta_io|
+    input.each_record do |record|
+      output.puts record
+
+      if record[:SEQ_NAME] and record[:SEQ]
+        fasta_io.puts Seq.new_bp(record).to_fasta
+      end
+    end
+  end
+end
+
+us = Usearch.new(file_fasta, file_uclust, options)
+
+us.sortbylength unless options[:no_sort]
+us.cluster_smallmem
+
+hash = {}
+
+us.each_cluster do |cluster|
+  hash[cluster[:Q_ID].to_sym] = cluster.dup
+end
+
+Biopieces.open(file_records, options[:stream_out]) do |input, output|
+  input.each_record do |record|
+    if record[:SEQ_NAME] and record[:SEQ]
+      seq_name = record[:SEQ_NAME].split(/\s+/).first.to_sym
+      if us = hash[seq_name]
+        record[:CLUSTER] = us[:CLUSTER].to_i
+        record[:IDENT]   = us[:IDENT].to_i
+        record[:IDENT] = '*' if us[:TYPE] == 'S'
+      end
+    end
+
+    output.puts record
+  end
+end
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+__END__

@@ -1,0 +1,209 @@
+#!/usr/bin/env ruby
+
+# Copyright (C) 2007-2011 Martin A. Hansen.
+
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+
+# http://www.gnu.org/copyleft/gpl.html
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# This program is part of the Biopieces framework (www.biopieces.org).
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> DESCRIPTION <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# Run Uclust on sequences in the stream.
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+require 'maasha/biopieces'
+require 'maasha/fasta'
+
+class Blast
+  include Enumerable
+
+  def initialize(infile1, infile2, outfile)
+    @infile1 = infile1
+    @infile2 = infile2
+    @outfile = outfile
+    @program = ""
+  end
+
+  # Method to choose the appropriate program, unless already
+  # specified, for the given data types.
+  def program_set(type1, type2, program)
+    if program.nil?
+      @program = program_choose(type1, type2)
+    else
+      @program = program
+    end
+  end
+
+  # Method to run BLAST with given options.
+  def run(options)
+    commands = []
+    commands << "nice -n 19"
+    commands << "bl2seq"
+    commands << "-i #{@infile1}"
+    commands << "-j #{@infile2}"
+    commands << "-o #{@outfile}"
+    commands << "-p #{@program}"
+    commands << "-W #{options[:word_size]}" if options[:word_size]
+    commands << "-D 1" # tabular output
+    commands << "-e #{options[:e_val]}"
+    commands << (options[:megablast] ? "-m T" : "-m F")
+    commands << (options[:filter] == 'yes'.to_sym ? "-F T" : "-F F") #  TODO fix this to_sym
+    commands << (options[:no_gaps] ? "-g F" : "-g T")
+    commands << "> /dev/null 2>&1" unless options[:verbose]
+
+		command = commands.join(" ")
+    $stderr.puts command if options[:verbose]
+    system(command)
+    raise "Command failed: #{command}" unless $?.success?
+  end
+
+	# Method to parse a BLAST tabular output and for each line of data
+	# yield a Biopiece record.
+  def each
+    record = {}
+
+    File.open(@outfile, 'r') do |ios|
+      ios.each_line do |line|
+        if line !~ /^#/
+          fields = line.chomp.split("\t")
+
+          record[:REC_TYPE]   = "BLAST"
+          record[:Q_ID]       = fields[0]
+          record[:S_ID]       = fields[1]
+          record[:IDENT]      = fields[2].to_f
+          record[:ALIGN_LEN]  = fields[3].to_i
+          record[:MISMATCHES] = fields[4].to_i
+          record[:GAPS]       = fields[5].to_i
+          record[:Q_BEG]      = fields[6].to_i - 1
+          record[:Q_END]      = fields[7].to_i - 1
+          record[:S_BEG]      = fields[8].to_i - 1
+          record[:S_END]      = fields[9].to_i - 1
+          record[:E_VAL]      = fields[10].to_f
+          record[:BIT_SCORE]  = fields[11].to_f
+
+          if record[:S_BEG] > record[:S_END]
+            record[:STRAND] = '-'
+
+            record[:S_BEG], record[:S_END] = record[:S_END], record[:S_BEG]
+          else
+            record[:STRAND] = '+'
+          end
+
+          yield record
+        end
+      end
+    end
+
+    self # conventionally
+  end
+
+  private
+
+  # Method that chose the correct BLAST program to work
+  # with two given types of data.
+  def program_choose(type1, type2)
+    program = ""
+
+    if type1 == :protein
+      if type2 == :protein
+        program = 'blastp'
+      else
+        program = 'tblastn'
+      end
+    else
+      if type2 == :protein
+        program = 'blastx'
+      else
+        program = 'blastn'
+      end
+    end
+
+    program
+  end
+end
+
+ok_programs = "blastn,blastp,tblastn,blastx,tblastx"
+
+casts = []
+casts << {:long=>'program',   :short=>'p', :type=>'string', :mandatory=>false, :default=>nil,  :allowed=>ok_programs, :disallowed=>nil}
+casts << {:long=>'e_val',     :short=>'e', :type=>'float',  :mandatory=>false, :default=>10.0, :allowed=>nil,         :disallowed=>nil}
+casts << {:long=>'filter',    :short=>'f', :type=>'string', :mandatory=>false, :default=>'no', :allowed=>'yes,no',    :disallowed=>nil}
+casts << {:long=>'megablast', :short=>'m', :type=>'flag',   :mandatory=>false, :default=>nil,  :allowed=>nil,         :disallowed=>nil}
+casts << {:long=>'no_gaps',   :short=>'G', :type=>'flag',   :mandatory=>false, :default=>nil,  :allowed=>nil,         :disallowed=>nil}
+casts << {:long=>'word_size', :short=>'w', :type=>'uint',   :mandatory=>false, :default=>nil,  :allowed=>nil,         :disallowed=>nil}
+
+options = Biopieces.options_parse(ARGV, casts)
+
+tmpdir  = Biopieces.mktmpdir
+infile1 = File.join(tmpdir, "in1.fna")
+infile2 = File.join(tmpdir, "in2.fna")
+outfile = File.join(tmpdir, "blast.out")
+
+got1    = nil
+got2    = nil
+type1   = ""
+type2   = ""
+
+Biopieces.open(options[:stream_in], options[:stream_out]) do |input, output|
+  input.each_record do |record|
+    output.puts record
+
+    if record[:SEQ_NAME] and record[:SEQ]
+      seq = Seq.new_bp(record)
+
+      if got1.nil?
+        Fasta.open(infile1, "w") do |fasta_io|
+          fasta_io.puts seq.to_fasta
+        end
+
+        got1  = true
+        type1 = Seq.new(seq: record[:SEQ][0 ... 100]).type_guess
+      elsif got2.nil?
+        Fasta.open(infile2, "w") do |fasta_io|
+          fasta_io.puts seq.to_fasta
+        end
+
+        got2  = true
+        type2 = Seq.new(seq: record[:SEQ][0 ... 100]).type_guess
+      end
+
+      if got1 and got2
+        blast = Blast.new(infile1, infile2, outfile)
+        blast.program_set(type1, type2, options[:program])
+        blast.run(options)
+
+        blast.each do |new_record|
+          output.puts new_record
+        end
+
+        got1 = nil
+        got2 = nil
+      end
+    end
+  end
+
+end
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+__END__

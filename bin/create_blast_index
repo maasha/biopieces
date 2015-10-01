@@ -1,0 +1,120 @@
+#!/usr/bin/env perl
+
+# Copyright (C) 2007-2009 Martin A. Hansen.
+
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+
+# http://www.gnu.org/copyleft/gpl.html
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> DESCRIPTION <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# Create a BLAST database from sequences in stream for use with [blast_seq].
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+use warnings;
+use strict;
+use Maasha::Seq;
+use Maasha::Fasta;
+use Maasha::Biopieces;
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+my ( $options, $in, $out, $record, $tmp_dir, $file_tmp, $fh_tmp, $entry, $seq_type, $arg );
+
+$options = Maasha::Biopieces::parse_options(
+    [
+        { long => 'no_stream',  short => 'x', type => 'flag',   mandatory => 'no',  default => undef, allowed => undef, disallowed => undef },
+        { long => 'directory',  short => 'd', type => 'dir',    mandatory => 'yes', default => undef, allowed => undef, disallowed => undef },
+        { long => 'index_name', short => 'i', type => 'string', mandatory => 'yes', default => undef, allowed => undef, disallowed => undef },
+    ]   
+);
+
+$in  = Maasha::Biopieces::read_stream( $options->{ "stream_in" } );
+$out = Maasha::Biopieces::write_stream( $options->{ "stream_out" } );
+
+$tmp_dir  = Maasha::Biopieces::get_tmpdir();
+$file_tmp = "$tmp_dir/$options->{ 'index_name' }";
+$fh_tmp   = Maasha::Filesys::file_write_open( $file_tmp );
+
+while ( $record = Maasha::Biopieces::get_record( $in ) ) 
+{
+    if ( $entry = Maasha::Fasta::biopiece2fasta( $record ) )
+    {
+        $seq_type = Maasha::Seq::seq_guess_type( $record->{ 'SEQ' } ) if not $seq_type;
+
+        Maasha::Fasta::put_entry( $entry, $fh_tmp );
+    }
+
+    Maasha::Biopieces::put_record( $record, $out ) if not $options->{ "no_stream" };
+}
+
+close $fh_tmp;
+
+$arg = "-t $options->{ 'index_name' }";
+
+if ( $seq_type eq "PROTEIN" ) {
+    $arg .= " -p T";
+} else {
+    $arg .= " -p F";
+}
+
+$arg .= " -v 12000";
+$arg .= " -i $file_tmp";
+
+if ( $options->{ 'verbose' } )
+{
+    print STDERR "Running: formatdb $arg\n";
+
+    Maasha::Common::run( "formatdb", "$arg" );
+}
+else
+{
+    Maasha::Common::run( "formatdb", "$arg -l /dev/null" );
+}
+
+Maasha::Filesys::dir_create_if_not_exists( $options->{ 'directory' } );
+
+unlink $file_tmp;
+
+system( "cp $tmp_dir/* $options->{ 'directory' }" );
+
+Maasha::Biopieces::close_stream( $in );
+Maasha::Biopieces::close_stream( $out );
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+BEGIN
+{
+    Maasha::Biopieces::status_set();
+}
+
+
+END
+{
+    Maasha::Biopieces::status_log();
+}
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+__END__

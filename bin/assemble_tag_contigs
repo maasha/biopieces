@@ -1,0 +1,142 @@
+#!/usr/bin/env perl
+
+# Copyright (C) 2007-2009 Martin A. Hansen.
+
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+
+# http://www.gnu.org/copyleft/gpl.html
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> DESCRIPTION <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# Assemble tag contigs from overlapping BED type records in the stream.
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+use warnings;
+use strict;
+use Maasha::Biopieces;
+use Maasha::Filesys;
+use Maasha::UCSC::BED;
+
+use constant {
+    chrom       => 0,   # BED field names
+    chromStart  => 1,
+    chromEnd    => 2,
+    name        => 3,
+    score       => 4,
+    strand      => 5,
+    thickStart  => 6,
+    thickEnd    => 7,
+    itemRgb     => 8,
+    blockCount  => 9,
+    blockSizes  => 10,
+    blockStarts => 11,
+};
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+my ( $options, $in, $out, $tmp_dir, $fh_in, $fh_out, $cols, $record, $bed_entry, %fh_hash, %file_hash, $file, $strand, $id, $tag_file, $bed_file );
+
+$options = Maasha::Biopieces::parse_options(
+    [
+        { long => 'check', short => 'C', type => 'flag', mandatory => 'no', default => undef, allowed => undef, disallowed => undef },
+    ]   
+);
+
+$in  = Maasha::Biopieces::read_stream( $options->{ "stream_in" } );
+$out = Maasha::Biopieces::write_stream( $options->{ "stream_out" } );
+
+`cd "$ENV{ BP_C }/Maasha/src" && make`; # FIXME OMG this is crufty!
+
+$tmp_dir = Maasha::Biopieces::get_tmpdir();
+    
+$cols = 6; # we only need the first 6 BED columns
+
+while ( $record = Maasha::Biopieces::get_record( $in ) ) 
+{
+    if ( $bed_entry = Maasha::UCSC::BED::biopiece2bed( $record, $cols ) )
+    {
+        if ( not exists $fh_hash{ $bed_entry->[ chrom ] . $bed_entry->[ strand ] } )
+        {
+            $file = "$tmp_dir/$bed_entry->[ chrom ]$bed_entry->[ strand ]";
+
+            $file_hash{ $bed_entry->[ chrom ] . $bed_entry->[ strand ] } = $file;
+            $fh_hash{   $bed_entry->[ chrom ] . $bed_entry->[ strand ] } = Maasha::Filesys::file_write_open( $file );
+        }
+
+        $fh_out = $fh_hash{ $bed_entry->[ chrom ] . $bed_entry->[ strand ] };
+
+        Maasha::UCSC::BED::bed_entry_put( $bed_entry, $fh_out, $cols, $options->{ 'check' } );
+    }
+}
+
+$id = 0;
+
+foreach $file ( sort keys %file_hash )
+{
+    $bed_file = $file_hash{ $file };
+    $tag_file = "$bed_file.tc";
+
+    $strand = substr $file, -1, 1;
+
+    Maasha::Common::run( "bed2tag_contigs", "< $bed_file > $tag_file" );
+
+    $fh_in = Maasha::Filesys::file_read_open( $tag_file );
+
+    while ( $bed_entry = Maasha::UCSC::BED::bed_entry_get( $fh_in, $cols, $options->{ 'check' } ) )
+    {
+        $bed_entry->[ name ]   = sprintf( "TC%08d", $id );
+        $bed_entry->[ strand ] = $strand;
+
+        if ( $record = Maasha::UCSC::BED::bed2biopiece( $bed_entry ) ) {
+            Maasha::Biopieces::put_record( $record, $out );
+        }
+
+        $id++;
+    }
+
+    close $fh_in;
+
+    unlink $bed_file;
+    unlink $tag_file;
+}
+
+Maasha::Biopieces::close_stream( $in );
+Maasha::Biopieces::close_stream( $out );
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+BEGIN
+{
+    Maasha::Biopieces::status_set();
+}
+
+
+END
+{
+    Maasha::Biopieces::status_log();
+}
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+__END__

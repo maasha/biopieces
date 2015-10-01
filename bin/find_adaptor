@@ -1,0 +1,160 @@
+#!/usr/bin/env ruby
+
+# Copyright (C) 2007-2012 Martin A. Hansen.
+
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+
+# http://www.gnu.org/copyleft/gpl.html
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# This program is part of the Biopieces framework (www.biopieces.org).
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> DESCRIPTION <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# Remove adaptors or parts thereof from sequences in the stream.
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+require 'pp'
+require 'maasha/biopieces'
+require 'maasha/seq'
+require 'maasha/seq/backtrack'
+
+def percent2real(length, percent)
+  (length * percent * 0.01).round
+end
+
+include BackTrack
+
+casts = []
+casts << {:long=>'forward',     :short=>'f', :type=>'string', :mandatory=>false, :default=>nil, :allowed=>nil, :disallowed=>nil}
+casts << {:long=>'forward_rc',  :short=>'F', :type=>'string', :mandatory=>false, :default=>nil, :allowed=>nil, :disallowed=>nil}
+casts << {:long=>'reverse',     :short=>'r', :type=>'string', :mandatory=>false, :default=>nil, :allowed=>nil, :disallowed=>nil}
+casts << {:long=>'reverse_rc',  :short=>'R', :type=>'string', :mandatory=>false, :default=>nil, :allowed=>nil, :disallowed=>nil}
+casts << {:long=>'len_forward', :short=>'l', :type=>'uint',   :mandatory=>false, :default=>nil, :allowed=>nil, :disallowed=>'0'}
+casts << {:long=>'len_reverse', :short=>'L', :type=>'uint',   :mandatory=>false, :default=>nil, :allowed=>nil, :disallowed=>'0'}
+casts << {:long=>'mismatches',  :short=>'m', :type=>'uint',   :mandatory=>false, :default=>10,  :allowed=>nil, :disallowed=>nil}
+casts << {:long=>'insertions',  :short=>'i', :type=>'uint',   :mandatory=>false, :default=>5,   :allowed=>nil, :disallowed=>nil}
+casts << {:long=>'deletions',   :short=>'d', :type=>'uint',   :mandatory=>false, :default=>5,   :allowed=>nil, :disallowed=>nil}
+
+options = Biopieces.options_parse(ARGV, casts)
+
+if options[:forward_rc]
+  options[:forward] = Seq.new(seq: options[:forward_rc], type: :dna).reverse.complement.seq
+end
+
+if options[:reverse_rc]
+  options[:reverse] = Seq.new(seq: options[:reverse_rc], type: :dna).reverse.complement.seq
+end
+
+raise ArgumentError, "no adaptor specified" unless options[:forward] or options[:reverse]
+
+if options[:forward]
+  options[:len_forward] = options[:forward].length unless options[:len_forward]
+
+  if options[:len_forward] > options[:forward].length
+    raise ArgumentError, "len_forward > forward adaptor (#{options[:len_forward]} > #{options[:forward].length})" 
+  end
+
+  fmis = percent2real(options[:forward].length, options[:mismatches])
+  fins = percent2real(options[:forward].length, options[:insertions])
+  fdel = percent2real(options[:forward].length, options[:deletions])
+end
+
+if options[:reverse]
+  options[:len_reverse] = options[:reverse].length unless options[:len_reverse]
+
+  if options[:len_reverse] > options[:reverse].length
+    raise ArgumentError, "len_reverse > reverse adaptor (#{options[:len_reverse]} > #{options[:reverse].length})"
+  end
+
+  rmis = percent2real(options[:reverse].length, options[:mismatches])
+  rins = percent2real(options[:reverse].length, options[:insertions])
+  rdel = percent2real(options[:reverse].length, options[:deletions])
+end
+
+Biopieces.open(options[:stream_in], options[:stream_out]) do |input, output|
+  input.each do |record|
+    if record[:SEQ]
+      entry = Seq.new_bp(record)
+
+      if options[:forward] and record[:SEQ].length >= options[:forward].length
+        if m = entry.patmatch(options[:forward], max_mismatches: fmis, max_insertions: fins, max_deletions: fdel)
+          record[:ADAPTOR_POS_LEFT] = m.pos
+          record[:ADAPTOR_LEN_LEFT] = m.length
+          record[:ADAPTOR_PAT_LEFT] = m.match
+        elsif options[:len_forward] < options[:forward].length
+          len = options[:forward].length - 1
+          pat = options[:forward]
+
+          while len >= options[:len_forward]
+            fmis = percent2real(len, options[:mismatches])
+            fins = percent2real(len, options[:insertions])
+            fdel = percent2real(len, options[:deletions])
+
+            pat = pat[1 ... pat.length]
+
+            if m = entry.patmatch(pat, start: 0, stop: len, max_mismatches: fmis, max_insertions: fins, max_deletions: fdel)
+              record[:ADAPTOR_POS_LEFT] = m.pos
+              record[:ADAPTOR_LEN_LEFT] = m.length
+              record[:ADAPTOR_PAT_LEFT] = m.match
+
+              break
+            end
+
+            len -= 1
+          end
+        end
+      end
+
+      if options[:reverse] and record[:SEQ].length >= options[:reverse].length
+        if m = entry.patmatch(options[:reverse], max_mismatches: rmis, max_insertions: rins, max_deletions: rdel)
+          record[:ADAPTOR_POS_RIGHT] = m.pos
+          record[:ADAPTOR_LEN_RIGHT] = m.length
+          record[:ADAPTOR_PAT_RIGHT] = m.match
+        elsif options[:len_reverse] < options[:reverse].length
+          len = options[:reverse].length - 1
+          pat = options[:reverse]
+
+          while len >= options[:len_reverse]
+            rmis = percent2real(len, options[:mismatches])
+            rins = percent2real(len, options[:insertions])
+            rdel = percent2real(len, options[:deletions])
+
+            pat = pat[0 ... pat.length - 1]
+
+            if m = entry.patmatch(pat, start: entry.length - len, max_mismatches: rmis, max_insertions: rins, max_deletions: rdel)
+              record[:ADAPTOR_POS_RIGHT] = m.pos
+              record[:ADAPTOR_LEN_RIGHT] = m.length
+              record[:ADAPTOR_PAT_RIGHT] = m.match
+
+              break
+            end
+
+            len -= 1
+          end
+        end
+      end
+    end
+
+    output.puts record
+  end
+end
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+__END__

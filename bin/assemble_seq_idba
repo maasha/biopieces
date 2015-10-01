@@ -1,0 +1,101 @@
+#!/usr/bin/env ruby
+
+# Copyright (C) 2007-2012 Martin A. Hansen.
+
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+
+# http://www.gnu.org/copyleft/gpl.html
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# This program is part of the Biopieces framework (www.biopieces.org).
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> DESCRIPTION <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# Assemble sequences in the stream using idba.
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+require 'maasha/biopieces'
+require 'maasha/fasta'
+
+casts = []
+casts << {:long=>'directory',  :short=>'d', :type=>'dir',  :mandatory=>true,  :default=>nil, :allowed=>nil, :disallowed=>nil}
+casts << {:long=>'kmer_min',   :short=>'k', :type=>'uint', :mandatory=>false, :default=>20,  :allowed=>nil, :disallowed=>nil}
+casts << {:long=>'kmer_max',   :short=>'K', :type=>'uint', :mandatory=>false, :default=>100, :allowed=>nil, :disallowed=>nil}
+casts << {:long=>'count_min',  :short=>'c', :type=>'uint', :mandatory=>false, :default=>2,   :allowed=>nil, :disallowed=>nil}
+casts << {:long=>'pairs_min',  :short=>'p', :type=>'uint', :mandatory=>false, :default=>3,   :allowed=>nil, :disallowed=>nil}
+casts << {:long=>'prefix_len', :short=>'P', :type=>'uint', :mandatory=>false, :default=>3,   :allowed=>nil, :disallowed=>nil}
+casts << {:long=>'cpus',       :short=>'C', :type=>'uint', :mandatory=>false, :default=>1,   :allowed=>nil, :disallowed=>nil}
+casts << {:long=>'clean',      :short=>'X', :type=>'flag', :mandatory=>false, :default=>nil, :allowed=>nil, :disallowed=>nil}
+
+options = Biopieces.options_parse(ARGV, casts)
+
+Dir.mkdir(options[:directory]) unless Dir.exists?(options[:directory])
+
+file_fasta = File.join(options[:directory], "IDBA") + ".fna"
+
+count = 0
+
+Biopieces.open(options[:stream_in], options[:stream_out]) do |input, output|
+	Fasta.open(file_fasta, "w") do |fasta_io|
+		input.each_record do |record|
+      if record[:SEQ_NAME] and record[:SEQ]
+        seq = Seq.new_bp(record)
+
+        fasta_io.puts seq.to_fasta
+      end
+		end
+	end
+
+	unless File.size(file_fasta) == 0
+		prefix = File.join(options[:directory], "IDBA")
+
+		commands = []
+		#commands << "idba"
+    commands << "/home/zfxu/install/idba_ud-1.0.9/bin/idba_ud"
+		commands << "--read #{file_fasta}"
+		commands << "--out #{prefix}"
+		commands << "--mink #{options[:kmer_min]}"
+		commands << "--maxk #{options[:kmer_max]}"
+		commands << "--min_count #{options[:count_min]}"
+		commands << "--min_pairs #{options[:pairs_min]}"
+		commands << "--prefix #{options[:prefix_len]}"
+		commands << "--num_threads #{options[:cpus]}"
+		commands << "> /dev/null 2>&1" unless options[:verbose]
+
+		command = commands.join(" ")
+
+	  system(command)
+	  raise "Command failed: #{command}" unless $?.success?
+
+    file_contig = File.join(options[:directory], "IDBA", "contig.fa")
+
+		Fasta.open(file_contig, "r") do |fasta_io|
+			fasta_io.each do |entry|
+				output.puts entry.to_bp
+			end
+		end
+	end
+end
+
+FileUtils.remove_entry_secure file_fasta
+FileUtils.remove_entry_secure options[:directory] if options[:clean]
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+__END__

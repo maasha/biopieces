@@ -1,0 +1,139 @@
+#!/usr/bin/env perl
+
+# Copyright (C) 2007-2009 Martin A. Hansen.
+
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+
+# http://www.gnu.org/copyleft/gpl.html
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> DESCRIPTION <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# Read tabular data.
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+use warnings;
+use strict;
+use Data::Dumper;
+use Maasha::Filesys;
+use Maasha::Biopieces;
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+my ( $options, $in, $out, $record, $data_in, $num, $skip, $line, @fields, @fields2, $i );
+
+$options = Maasha::Biopieces::parse_options(
+    [
+        { long => 'data_in', short => 'i', type => 'files!', mandatory => 'no', default => undef, allowed => undef, disallowed => undef },
+        { long => 'delimit', short => 'd', type => 'string', mandatory => 'no', default => '\s+', allowed => undef, disallowed => undef },
+        { long => 'cols',    short => 'c', type => 'list',   mandatory => 'no', default => undef, allowed => undef, disallowed => undef },
+        { long => 'keys',    short => 'k', type => 'list',   mandatory => 'no', default => undef, allowed => undef, disallowed => undef },
+        { long => 'skip',    short => 's', type => 'uint',   mandatory => 'no', default => '0',   allowed => undef, disallowed => undef },
+        { long => 'num',     short => 'n', type => 'uint',   mandatory => 'no', default => undef, allowed => undef, disallowed => '0' },
+    ]   
+);
+
+$in  = Maasha::Biopieces::read_stream( $options->{ "stream_in" } );
+$out = Maasha::Biopieces::write_stream( $options->{ "stream_out" } );
+
+while ( $record = Maasha::Biopieces::get_record( $in ) ) {
+    Maasha::Biopieces::put_record( $record, $out );
+}
+
+if ( $options->{ 'data_in' } )
+{
+    $data_in = Maasha::Filesys::files_read_open( $options->{ 'data_in' } );
+
+    $num  = 1;
+    $skip = $options->{ 'skip' };
+
+    while ( $line = <$data_in> ) 
+    {
+        chomp $line;
+
+        if ( $skip )
+        {
+            $skip--;
+            next;
+        }
+
+        next if $line =~ /^$/;  # skip empty lines.
+
+        if ( $line =~ /^#.+/ and not defined $options->{ 'keys' } )
+        {
+            $line = substr $line, 1;
+
+            $options->{ 'keys' } = [ split /$options->{'delimit'}/, $line ];
+
+            next;
+        }
+
+        undef $record;
+        undef @fields2;
+
+        @fields = split /$options->{'delimit'}/, $line;
+
+        if ( $options->{ "cols" } ) {
+            map { push @fields2, $fields[ $_ ] } @{ $options->{ "cols" } };
+        } else {
+            @fields2 = @fields;
+        }
+
+        for ( $i = 0; $i < @fields2; $i++ )
+        {
+            if ( $options->{ "keys" }->[ $i ] ) {
+                $record->{ $options->{ "keys" }->[ $i ] } = $fields2[ $i ];
+            } else {
+                $record->{ "V" . $i } = $fields2[ $i ];
+            }
+        }
+
+        Maasha::Biopieces::put_record( $record, $out );
+
+        last if $options->{ "num" } and $num == $options->{ "num" };
+
+        $num++;
+    }
+
+    close $data_in;
+}
+
+Maasha::Biopieces::close_stream( $in );
+Maasha::Biopieces::close_stream( $out );
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+BEGIN
+{
+    Maasha::Biopieces::status_set();
+}
+
+
+END
+{
+    Maasha::Biopieces::status_log();
+}
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+__END__

@@ -1,0 +1,123 @@
+#!/usr/bin/env ruby
+
+# Copyright (C) 2007-2012 Martin A. Hansen.
+
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+
+# http://www.gnu.org/copyleft/gpl.html
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# This program is part of the Biopieces framework (www.biopieces.org).
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> DESCRIPTION <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# Use BWA to map sequences in the stream against a specified index.
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+require 'maasha/biopieces'
+require 'maasha/seq'
+require 'maasha/fasta'
+require 'maasha/fastq'
+require 'maasha/sam'
+
+casts = []
+casts << {:long=>'index_name', :short=>'i', :type=>'string', :mandatory=>true,  :default=>nil, :allowed=>nil,       :disallowed=>nil}
+casts << {:long=>'mismatches', :short=>'m', :type=>'uint',   :mandatory=>false, :default=>0,   :allowed=>"0,1,2,3", :disallowed=>nil}
+casts << {:long=>'max_hits',   :short=>'h', :type=>'uint',   :mandatory=>false, :default=>30,  :allowed=>nil,       :disallowed=>'0'}
+casts << {:long=>'cpus',       :short=>'c', :type=>'uint',   :mandatory=>false, :default=>1,   :allowed=>nil,       :disallowed=>'0'}
+
+options = Biopieces.options_parse(ARGV, casts)
+
+tmp_dir = Biopieces.mktmpdir
+tmp_fq  = File.join(tmp_dir, "bwa.fq")
+tmp_sai = File.join(tmp_dir, "bwa.sai")
+tmp_sam = File.join(tmp_dir, "bwa.sam")
+
+# Class containing methods for executing BWA.
+class BWA
+  def initialize(fq_file, sai_file, sam_file, options)
+    @fq_file  = fq_file
+    @sai_file = sai_file
+    @sam_file = sam_file
+    @options  = options
+    @command  = []
+  end
+
+  # Method to run bwa aln.
+  def aln
+    @command << "bwa aln"
+    @command << "-t #{@options[:cpus]}"
+    @command << "-R #{@options[:max_hits]}"
+    @command << "-f #{@sai_file}"
+    @command << @options[:index_name]
+    @command << @fq_file
+
+    execute
+  end
+
+  # Method to run bwa samse.
+  def samse
+    @command << "bwa samse"
+    @command << "-f #{@sam_file}"
+    @command << @options[:index_name]
+    @command << @sai_file
+    @command << @fq_file
+
+    execute
+  end
+
+  private
+
+  # Method to execute a command using a system() call.
+  # The command is composed of bits from the @command variable.
+  def execute
+    @command.unshift "nice -n 19"
+    @command << "> /dev/null 2>&1" unless @options[:verbose]
+
+    command = @command.join(" ")
+    $stderr.puts "Running command: #{command}" if @options[:verbose]
+    system(command)
+    raise "Command failed: #{command}" unless $?.success?
+
+    @command = []
+  end
+end
+
+Biopieces.open(options[:stream_in], options[:stream_out]) do |input, output|
+  Fastq.open(tmp_fq, 'w') do |io_fq|
+    input.each_record do |record|
+      output.puts record
+
+      if record[:SEQ_NAME] and record[:SEQ] and record[:SCORES]
+        entry = Seq.new_bp(record)
+
+        io_fq.puts entry.to_fastq
+      end
+    end
+  end
+
+  bwa = BWA.new(tmp_fq, tmp_sai, tmp_sam, options)
+  bwa.aln
+  bwa.samse
+
+  Sam.open(tmp_sam, 'r') do |io_sam|
+    io_sam.each do |entry|
+      output.puts Sam.to_bp(entry) unless entry[:RNAME] == '*'
+    end
+  end
+end
+

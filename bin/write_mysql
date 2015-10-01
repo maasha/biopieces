@@ -1,0 +1,293 @@
+#!/usr/bin/env perl
+
+# Copyright (C) 2007-2009 Martin A. Hansen.
+
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+
+# http://www.gnu.org/copyleft/gpl.html
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> DESCRIPTION <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# Write Biopiece records to a MySQL database.
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+use warnings;
+use strict;
+use Maasha::SQL;
+use Maasha::Biopieces;
+use Maasha::Filesys;
+use Maasha::Calc;
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+my ( $options, $user, $password, $dbh, $in, $out, $tmp_dir, $tmp_file, $fh_out, $record, $key, $type_hash, $i, @keys, $line );
+
+$user     = Maasha::Biopieces::biopiecesrc( "MYSQL_USER" );
+$password = Maasha::Biopieces::biopiecesrc( "MYSQL_PASSWORD" );
+
+$options = Maasha::Biopieces::parse_options(
+    [
+        { long => 'user',             short => 'u', type => 'string', mandatory => 'no',  default => $user,     allowed => undef, disallowed => undef },
+        { long => 'password',         short => 'p', type => 'string', mandatory => 'no',  default => $password, allowed => undef, disallowed => undef },
+        { long => 'database',         short => 'd', type => 'string', mandatory => 'yes', default => undef,     allowed => undef, disallowed => undef },
+        { long => 'table',            short => 't', type => 'string', mandatory => 'yes', default => undef,     allowed => undef, disallowed => undef },
+        { long => 'index',            short => 'i', type => 'list',   mandatory => 'no' , default => undef,     allowed => undef, disallowed => undef },
+        { long => 'database_replace', short => 'D', type => 'flag',   mandatory => 'no' , default => undef,     allowed => undef, disallowed => undef },
+        { long => 'table_replace',    short => 'T', type => 'flag',   mandatory => 'no' , default => undef,     allowed => undef, disallowed => undef },
+        { long => 'table_append',     short => 'A', type => 'flag',   mandatory => 'no' , default => undef,     allowed => undef, disallowed => undef },
+        { long => 'guess_type',       short => 'g', type => 'uint',   mandatory => 'no',  default => 1000,      allowed => undef, disallowed => 0     },
+        { long => 'sql',              short => 's', type => 'string', mandatory => 'no',  default => undef,     allowed => undef, disallowed => undef },
+        { long => 'no_stream',        short => 'x', type => 'flag',   mandatory => 'no',  default => undef,     allowed => undef, disallowed => undef },
+    ]   
+);
+
+$in  = Maasha::Biopieces::read_stream( $options->{ "stream_in" } );
+$out = Maasha::Biopieces::write_stream( $options->{ "stream_out" } );
+
+$options->{ 'guess_type' } = 0 if $options->{ 'table_append' } or $options->{ 'sql' }; # no point in analyzing data types.
+
+$tmp_dir  = Maasha::Biopieces::get_tmpdir();
+$tmp_file = "$tmp_dir/mysql.tab";
+
+$fh_out  = Maasha::Filesys::file_write_open( $tmp_file );
+
+$type_hash = {};
+
+$i = 0;
+
+while ( $record = Maasha::Biopieces::get_record( $in ) ) 
+{
+    $line = "";
+    @keys = sort keys %{ $record } if not @keys;
+
+    guess_types( $type_hash, $record ) if $i < $options->{ 'guess_type' };
+
+    map { $line .= "$record->{ $_ }\t" } @keys;
+
+    chop $line;
+    print $fh_out "$line\n";
+
+    Maasha::Biopieces::put_record( $record, $out ) if not $options->{ "no_stream" };
+
+    $i++;
+}
+
+close $fh_out;
+
+if ( Maasha::SQL::database_exists( $options->{ 'database' }, $options->{ 'user' }, $options->{ 'password' } ) )
+{
+    if ( $options->{ 'database_replace' } )
+    {
+        Maasha::SQL::delete_database( $options->{ 'database' }, $options->{ 'user' }, $options->{ 'password' } );
+        Maasha::SQL::create_database( $options->{ 'database' }, $options->{ 'user' }, $options->{ 'password' } );
+    }
+}
+else
+{
+    Maasha::SQL::create_database( $options->{ 'database' }, $options->{ 'user' }, $options->{ 'password' } );
+}
+
+$dbh = Maasha::SQL::connect( $options->{ 'database' }, $options->{ 'user' }, $options->{ 'password' } );
+
+if ( Maasha::SQL::table_exists( $dbh, $options->{ 'table' } ) )
+{
+    if ( not $options->{ 'table_replace' } and not $options->{ 'table_append' } ) {
+        Maasha::Common::error( qq(Table "$options->{ 'table' }" exists. Use --table_replace or --table_append) )
+    }
+
+    if ( $options->{ 'table_replace' } ) {
+        Maasha::SQL::delete_table( $dbh, $options->{ 'table' } ) if Maasha::SQL::table_exists( $dbh, $options->{ 'table' } );
+    }
+
+    if ( $options->{ 'sql' } ) {
+        Maasha::SQL::request( $dbh, $options->{ 'sql' } );
+    } elsif ( not $options->{ 'table_append' } ) {
+        create_table( $dbh, $options->{ 'table' }, $type_hash, $options->{ 'index' }, $options->{ 'verbose' } );
+    }
+}
+else
+{
+    create_table( $dbh, $options->{ 'table' }, $type_hash, $options->{ 'index' }, $options->{ 'verbose' } );
+}
+
+Maasha::SQL::bulk_load_file( $dbh, $tmp_file, $options->{ 'table' }, "\t" ) if Maasha::SQL::table_exists( $dbh, $options->{ 'table' } );
+
+Maasha::SQL::disconnect( $dbh );
+
+unlink $tmp_file;
+
+Maasha::Biopieces::close_stream( $in );
+Maasha::Biopieces::close_stream( $out );
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> SUBROUTINES <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+sub guess_types
+{
+    # Martin A. Hansen, July 2009.
+
+    # Guess the MySQL table types from Biopiece records.
+
+    my ( $type_hash,   # Hash with type info
+         $record,      # Biopiece record
+       ) = @_;
+
+    # Returns nothing.
+
+    my ( $key );
+
+    foreach $key ( keys %{ $record } )
+    {
+        if ( exists $type_hash->{ $key } )
+        {
+            if ( Maasha::Calc::is_a_number( $record->{ $key } ) )
+            {
+                if ( $record->{ $key } =~ tr/.// ) {
+                    $type_hash->{ $key }->{ "TYPE" } = "FLOAT";
+                } else {
+                    $type_hash->{ $key }->{ "TYPE" } = "INTEGER";
+                }
+
+                $type_hash->{ $key }->{ "MIN" }  = Maasha::Calc::min( $record->{ $key }, $type_hash->{ $key }->{ "MIN" } );
+                $type_hash->{ $key }->{ "MAX" }  = Maasha::Calc::max( $record->{ $key }, $type_hash->{ $key }->{ "MAX" } );
+            } 
+            else
+            {
+                $type_hash->{ $key }->{ "TYPE" } = "ALPH";
+                $type_hash->{ $key }->{ "MIN" }  = Maasha::Calc::min( length $record->{ $key }, $type_hash->{ $key }->{ "MIN" } );
+                $type_hash->{ $key }->{ "MAX" }  = Maasha::Calc::max( length $record->{ $key }, $type_hash->{ $key }->{ "MAX" } );
+            }
+        }
+        else
+        {
+            if ( Maasha::Calc::is_a_number( $record->{ $key } ) )
+            {
+                $type_hash->{ $key }->{ "TYPE" } = "NUMBER";
+                $type_hash->{ $key }->{ "MIN" }  = $record->{ $key };
+                $type_hash->{ $key }->{ "MAX" }  = $record->{ $key };
+            } 
+            else
+            {
+                $type_hash->{ $key }->{ "TYPE" } = "ALPH";
+                $type_hash->{ $key }->{ "MIN" }  = length $record->{ $key };
+                $type_hash->{ $key }->{ "MAX" }  = length $record->{ $key };
+            }
+        }
+    }
+}
+
+
+sub create_table
+{
+    # Martin A. Hansen, July 2009
+
+    # Create a new MySQL table.
+
+    my ( $dbh,            # Database handle
+         $table,          # Table name
+         $type_hash,      # Hashref with type info.
+         $fields_index,   # Fields to index
+         $verbose,        # Verbose switch
+       ) = @_;
+
+    # Returns nothing.
+
+    my ( %index_hash, $key, $field, @fields, $fields, $diff, $sql );
+
+    map { $index_hash{ $_ } = 1 } @{ $fields_index };
+
+    foreach $key ( sort keys %{ $type_hash } )
+    {
+        $field = "";
+
+        $diff = $type_hash->{ $key }->{ "MAX" } - $type_hash->{ $key }->{ "MIN" };
+
+        if ( $type_hash->{ $key }->{ "TYPE" } eq "INTEGER" )
+        {
+            $field = "$key ";
+
+            if ( $type_hash->{ $key }->{ "MIN" } >= 0 ) {
+       #         $field .= "UNSIGNED ";
+            }
+
+            if ( $diff <= 255 ) {
+                $field .= "TINYINT";
+            } elsif ( $diff <= 65535 ) {
+                $field .= "SMALLINT";
+            } elsif ( $diff <= 16777215 ) {
+                $field .= "MEDIUMINT";
+            } elsif ( $diff <= 4294967295 ) {
+                $field .= "INT";
+            } else {
+                $field .= "BIGINT";
+            }
+        }
+        elsif ( $type_hash->{ $key }->{ "TYPE" } eq "FLOAT" )
+        {
+                $field .= "$key FLOAT";  # FLOAT(p) where p=precision from 0 to 23 results in a four-byte single-precision FLOAT column.
+                                    # A precision from 24 to 53 results in an eight-byte double-precision coulumn.
+        }
+        else
+        {
+            if ( $type_hash->{ $key }->{ "MAX" } > 1024 ) {
+                $field = "$key BLOB";
+            } if ( $diff == 0 ) {
+                $field = "$key CHAR($type_hash->{ $key }->{ 'MAX' })";
+            } else {
+                $field = "$key VARCHAR($type_hash->{ $key }->{ 'MAX' })";
+            }
+        }
+
+        $field .= ", INDEX $key" . "_index ($key)" if exists $index_hash{ $key };
+
+        push @fields, $field;
+    }
+
+    $fields = join( ", ", @fields ); 
+
+    $sql = "CREATE TABLE $table ($fields)"; #. " MAX_ROWS = 100000000";
+
+    print STDERR "$sql\n" if $verbose;
+
+    Maasha::SQL::request( $dbh, $sql );
+}
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+BEGIN
+{
+    Maasha::Biopieces::status_set();
+}
+
+
+END
+{
+    Maasha::SQL::disconnect( $dbh ) if $dbh;
+    Maasha::Biopieces::status_log();
+}
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+__END__

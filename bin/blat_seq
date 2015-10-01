@@ -1,0 +1,147 @@
+#!/usr/bin/env perl
+
+# Copyright (C) 2007-2010 Martin A. Hansen.
+
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+
+# http://www.gnu.org/copyleft/gpl.html
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> DESCRIPTION <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# BLAT sequences in the stream against a genome.
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+use warnings;
+use strict;
+use Maasha::Biopieces;
+use Maasha::Filesys;
+use Maasha::Fasta;
+use Maasha::Seq;
+use Maasha::UCSC::PSL;
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+my ( $options, $in, $out, $record, $blat_args, $subject_file, $query_file, $fh_in, $fh_out,
+     $tmp_dir, $type, $result_file, $entry );
+
+$options = Maasha::Biopieces::parse_options(
+    [
+        { long => 'database',       short => 'd', type => 'file',   mandatory => 'no', default => undef,  allowed => undef, disallowed => undef },
+        { long => 'genome',         short => 'g', type => 'genome', mandatory => 'no', default => undef,  allowed => undef, disallowed => undef },
+        { long => 'fast_map',       short => 'f', type => 'flag',   mandatory => 'no', default => undef,  allowed => undef, disallowed => undef },
+        { long => 'occ',            short => 'c', type => 'flag',   mandatory => 'no', default => undef,  allowed => undef, disallowed => undef },
+        { long => 'intron_max',     short => 'i', type => 'uint',   mandatory => 'no', default => 750000, allowed => undef, disallowed => undef },
+        { long => 'tile_size',      short => 't', type => 'uint',   mandatory => 'no', default => 11,     allowed => undef, disallowed => 0 },
+        { long => 'step_size',      short => 's', type => 'uint',   mandatory => 'no', default => 11,     allowed => undef, disallowed => 0 },
+        { long => 'min_identity',   short => 'm', type => 'uint',   mandatory => 'no', default => 90,     allowed => undef, disallowed => 0 },
+        { long => 'min_score',      short => 'M', type => 'uint',   mandatory => 'no', default => 0,      allowed => undef, disallowed => undef },
+        { long => 'one_off',        short => 'o', type => 'uint',   mandatory => 'no', default => 0,      allowed => undef, disallowed => undef },
+        { long => 'allow_N_blocks', short => 'N', type => 'flag',   mandatory => 'no', default => undef,  allowed => undef, disallowed => undef },
+    ]   
+);
+
+Maasha::Common::error( qq(both --database and --genome specified) ) if     $options->{ "genome" } and     $options->{ "database" };
+Maasha::Common::error( qq(no --database or --genome specified) )    if not $options->{ "genome" } and not $options->{ "database" };
+
+$in  = Maasha::Biopieces::read_stream( $options->{ "stream_in" } );
+$out = Maasha::Biopieces::write_stream( $options->{ "stream_out" } );
+
+if ( $options->{ 'database' } ) {
+    $subject_file = $options->{ 'database' };
+} else {
+    $subject_file = "$ENV{ 'BP_DATA' }/genomes/$options->{ 'genome' }/fasta/$options->{ 'genome' }.fna";
+}
+
+$blat_args .= " -tileSize=$options->{ 'tile_size' }";
+$blat_args .= " -oneOff=$options->{ 'one_off' }";
+$blat_args .= " -minIdentity=$options->{ 'min_identity' }";
+$blat_args .= " -minScore=$options->{ 'min_score' }";
+$blat_args .= " -stepSize=$options->{ 'step_size' }";
+$blat_args .= " -maxIntron=$options->{ 'intron_max' }";
+$blat_args .= " -fastMap"        if $options->{ 'fast_map' }; 
+$blat_args .= " -extendThroughN" if $options->{ 'allow_N_blocks' }; 
+# $blat_args .= " -ooc=" . Maasha::Config::genome_blat_ooc( $options->{ "genome" }, 11 ) if $options->{ 'ooc' };
+
+$tmp_dir = Maasha::Biopieces::get_tmpdir();
+$query_file = "$tmp_dir/blat.seq";
+
+$fh_out = Maasha::Filesys::file_write_open( $query_file );
+
+while ( $record = Maasha::Biopieces::get_record( $in ) ) 
+{
+    if ( $entry = Maasha::Fasta::biopiece2fasta( $record ) )
+    {
+        $type = Maasha::Seq::seq_guess_type( $record->{ 'SEQ' } ) if not $type;
+        Maasha::Fasta::put_entry( $entry, $fh_out, 80 );
+    }
+
+    Maasha::Biopieces::put_record( $record, $out );
+}
+
+close $fh_out;
+
+$blat_args .= " -t=dnax" if $type eq "PROTEIN";
+$blat_args .= " -q=$type";
+
+$result_file = "$tmp_dir/blat.psl";
+
+if ( $options->{ 'verbose' } ) {
+    Maasha::Common::run( "blat", "$subject_file $query_file $blat_args $result_file" );
+} else {
+    Maasha::Common::run( "blat", "$subject_file $query_file $blat_args $result_file > /dev/null 2>&1" );
+}
+
+unlink $query_file;
+
+$fh_in = Maasha::Filesys::file_read_open( $result_file );
+
+while ( $entry = Maasha::UCSC::PSL::psl_entry_get( $fh_in ) )
+{
+    if ( $record = Maasha::UCSC::PSL::psl2biopiece( $entry ) ) {
+        Maasha::Biopieces::put_record( $record, $out );
+    }
+}
+
+close  $fh_in;
+unlink $result_file;
+
+Maasha::Biopieces::close_stream( $in );
+Maasha::Biopieces::close_stream( $out );
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+BEGIN
+{
+    Maasha::Biopieces::status_set();
+}
+
+
+END
+{
+    Maasha::Biopieces::status_log();
+}
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+__END__

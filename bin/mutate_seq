@@ -1,0 +1,94 @@
+#!/usr/bin/env perl
+
+# Copyright (C) 2007-2009 Martin A. Hansen.
+
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+
+# http://www.gnu.org/copyleft/gpl.html
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> DESCRIPTION <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# Introduce mutations into sequences in the stream.
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+use warnings;
+use strict;
+use Maasha::Common;
+use Maasha::Biopieces;
+use Maasha::Seq;
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+my ( $options, $in, $out, $type, $alph, $mutations, $seq_len, $record );
+
+$options = Maasha::Biopieces::parse_options(
+    [
+        { long => 'number',  short => 'n', type => 'uint',   mandatory => 'no', default => undef, allowed => undef,             disallowed => 0     },
+        { long => 'percent', short => 'p', type => 'float',  mandatory => 'no', default => undef, allowed => undef,             disallowed => 0     },
+        { long => 'type',    short => 't', type => 'string', mandatory => 'no', default => undef, allowed => 'rna,dna,protein', disallowed => undef },
+    ]   
+);
+
+Maasha::Common::error( qq(both --number and --percent specified) ) if     $options->{ "number" } and     $options->{ "percent" };
+Maasha::Common::error( qq(no --number or --percent specified) )    if not $options->{ "number" } and not $options->{ "percent" };
+
+$in  = Maasha::Biopieces::read_stream( $options->{ "stream_in" } );
+$out = Maasha::Biopieces::write_stream( $options->{ "stream_out" } );
+
+while ( $record = Maasha::Biopieces::get_record( $in ) ) 
+{
+    if ( $record->{ "SEQ" } )
+    {
+        $seq_len   = length $record->{ "SEQ" };
+        $type      = $options->{ "type" } || Maasha::Seq::seq_guess_type( $record->{ "SEQ" } );
+        $alph      = Maasha::Seq::seq_alph( $type );
+        $mutations = $options->{ "number" } || int( $seq_len * ( $options->{ "percent" } / 100 ) );
+
+        Maasha::Common::error( qq(mutations > sequence length: $mutations > $seq_len)  ) if $mutations > $seq_len;
+
+        $record->{ "SEQ" } = Maasha::Seq::seq_mutate( $record->{ "SEQ" }, $mutations, $alph );
+    }
+
+    Maasha::Biopieces::put_record( $record, $out );
+}
+
+Maasha::Biopieces::close_stream( $in );
+Maasha::Biopieces::close_stream( $out );
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+BEGIN
+{
+    Maasha::Biopieces::status_set();
+}
+
+
+END
+{
+    Maasha::Biopieces::status_log();
+}
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+__END__

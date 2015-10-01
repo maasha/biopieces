@@ -1,0 +1,119 @@
+#!/usr/bin/env ruby
+
+# Copyright (C) 2007-2013 Martin A. Hansen.
+
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+
+# http://www.gnu.org/copyleft/gpl.html
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# This program is part of the Biopieces framework (www.biopieces.org).
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> DESCRIPTION <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# Assemble ordered overlapping pair-end sequences in the stream.
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+require 'maasha/biopieces'
+require 'maasha/seq'
+require 'maasha/seq/assemble'
+require 'pp'
+
+def names_match(entry1, entry2)
+  if entry1.seq_name =~ /^([^ ]+) \d:/
+    name1 = $1
+  elsif entry1.seq_name =~ /^(.+)\/\d$/
+    name1 = $1
+  else
+    raise "Could not match sequence name: #{entry1.seq_name}"
+  end
+
+  if entry2.seq_name =~ /^([^ ]+) \d:/
+    name2 = $1
+  elsif entry2.seq_name =~ /^(.+)\/\d$/
+    name2 = $1
+  else
+    raise "Could not match sequence name: #{entry2.seq_name}"
+  end
+
+  name1 == name2
+end
+
+casts = []
+casts << {long: 'mismatches',  short: 'm', type: 'uint', mandatory: false, default: 5,   allowed: nil, disallowed: nil}
+casts << {long: 'overlap_min', short: 'o', type: 'uint', mandatory: false, default: 1,   allowed: nil, disallowed: "0"}
+casts << {long: 'overlap_max', short: 'p', type: 'uint', mandatory: false, default: nil, allowed: nil, disallowed: "0"}
+
+options = Biopieces.options_parse(ARGV, casts)
+
+entry1 = nil
+entry2 = nil
+
+Biopieces.open(options[:stream_in], options[:stream_out]) do |input, output|
+  input.each_record do |record|
+    if record[:SEQ_NAME] and record[:SEQ] and record[:SCORES]
+      if entry1.nil?
+        entry1 = Seq.new_bp(record)
+      elsif entry2.nil?
+        entry2 = Seq.new_bp(record)
+      end
+
+      if entry1 and
+         entry2 and
+         entry1.length >= options[:overlap_min] and
+         entry2.length >= options[:overlap_min]
+
+        if names_match(entry1, entry2)
+          entry2.type = :dna
+          entry2.reverse!.complement!
+
+          merged = Assemble.pair(
+            entry1,
+            entry2,
+            mismatches_max: options[:mismatches],
+            overlap_min: options[:overlap_min],
+            overlap_max: options[:overlap_max]
+          )
+
+          if merged
+            new_record = merged.to_bp
+
+            if merged.seq_name =~ /overlap=(\d+):hamming=(\d+)$/
+              new_record[:OVERLAP_LEN]  = $1
+              new_record[:HAMMING_DIST] = $2
+            end
+
+            output.puts new_record
+          end
+        else
+          raise "name mismatch: #{entry1.seq_name} != #{entry2.seq_name}"
+        end
+
+        entry1 = nil
+        entry2 = nil
+      end
+    else
+      output.puts record
+    end
+  end
+end
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+__END__

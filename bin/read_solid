@@ -1,0 +1,119 @@
+#!/usr/bin/env perl
+
+# Copyright (C) 2007-2009 Martin A. Hansen.
+
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+
+# http://www.gnu.org/copyleft/gpl.html
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> DESCRIPTION <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# Read SOLID entries from one or more files.
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+use warnings;
+use strict;
+use Maasha::Biopieces;
+use Maasha::Filesys;
+use Maasha::Solid;
+use Maasha::Calc;
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+my ( $options, $in, $out, $record, $data_in, $num, $entry, $i,
+     $seq_name, $seq_cs, $line, $seq_qual, @scores, @seqs );
+
+$options = Maasha::Biopieces::parse_options(
+    [
+        { long => 'data_in', short => 'i', type => 'files!', mandatory => 'no', default => undef, allowed => undef, disallowed => undef },
+        { long => 'num',     short => 'n', type => 'uint',   mandatory => 'no', default => undef, allowed => undef, disallowed => '0'   },
+        { long => 'quality', short => 'q', type => 'uint',   mandatory => 'no', default => 20,    allowed => undef, disallowed => undef },
+    ]   
+);
+
+$in  = Maasha::Biopieces::read_stream( $options->{ "stream_in" } );
+$out = Maasha::Biopieces::write_stream( $options->{ "stream_out" } );
+
+while ( $record = Maasha::Biopieces::get_record( $in ) ) {
+    Maasha::Biopieces::put_record( $record, $out );
+}
+
+if ( $options->{ 'data_in' } )
+{
+    $data_in = Maasha::Filesys::files_read_open( $options->{ 'data_in' } );
+
+    $num = 1;
+
+    while ( $line = <$data_in> )
+    {
+        chomp $line;
+
+        ( $seq_name, $seq_cs, $seq_qual ) = split /\t/, $line;
+
+        @scores = split /,/, $seq_qual;
+        @seqs   = split //, Maasha::Solid::color_space2seq( $seq_cs );
+
+        for ( $i = 0; $i < @seqs; $i++ ) {
+            $seqs[ $i ] = lc $seqs[ $i ] if $scores[ $i ] < $options->{ "quality" };
+        }
+
+        $record = {
+            REC_TYPE   => 'SOLID',
+            SEQ_NAME   => $seq_name,
+            SEQ_CS     => $seq_cs,
+            SEQ_QUAL   => join( ";", @scores ),
+            SEQ_LEN    => length $seq_cs,
+            SEQ        => join( "", @seqs ),
+            SCORE_MEAN => sprintf( "%.2f", Maasha::Calc::mean( \@scores ) ),
+        };
+
+        Maasha::Biopieces::put_record( $record, $out );
+
+        last if $options->{ "num" } and $num == $options->{ "num" };
+
+        $num++;
+    }
+
+    close $data_in;
+}
+
+Maasha::Biopieces::close_stream( $in );
+Maasha::Biopieces::close_stream( $out );
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+BEGIN
+{
+    Maasha::Biopieces::status_set();
+}
+
+
+END
+{
+    Maasha::Biopieces::status_log();
+}
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+__END__

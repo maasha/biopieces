@@ -1,0 +1,143 @@
+#!/usr/bin/env ruby
+
+# Copyright (C) 2007-2013 Martin A. Hansen.
+
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+
+# http://www.gnu.org/copyleft/gpl.html
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# This program is part of the Biopieces framework (www.biopieces.org).
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> DESCRIPTION <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# Write tabular output from the stream.
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+class Numeric
+  def commify
+    self.to_s.gsub(/(^[-+]?\d+?(?=(?>(?:\d{3})+)(?!\d))|\G\d{3}(?=\d))/, '\1,')
+  end
+end
+
+require 'terminal-table'
+require 'maasha/biopieces'
+require 'maasha/filesys'
+
+casts = []
+casts << {long: 'no_stream', short: 'x', type: 'flag',   mandatory: false, default: nil,  allowed: nil,               disallowed: nil}
+casts << {long: 'pretty',    short: 'p', type: 'flag',   mandatory: false, default: nil,  allowed: nil,               disallowed: nil}
+casts << {long: 'comment',   short: 'c', type: 'flag',   mandatory: false, default: nil,  allowed: nil,               disallowed: nil}
+casts << {long: 'commify',   short: 'C', type: 'flag',   mandatory: false, default: nil,  allowed: nil,               disallowed: nil}
+casts << {long: 'delimit',   short: 'd', type: 'string', mandatory: false, default: "\t", allowed: nil,               disallowed: nil}
+casts << {long: 'keys',      short: 'k', type: 'list',   mandatory: false, default: nil,  allowed: nil,               disallowed: nil}
+casts << {long: 'no_keys',   short: 'K', type: 'list',   mandatory: false, default: nil,  allowed: nil,               disallowed: nil}
+casts << {long: 'data_out',  short: 'o', type: 'file',   mandatory: false, default: nil,  allowed: nil,               disallowed: nil}
+casts << {long: 'compress',  short: 'Z', type: 'string', mandatory: false, default: nil,  allowed: "gzip,bzip,bzip2", disallowed: nil}
+
+options = Biopieces.options_parse(ARGV, casts)
+
+compress = options[:compress] ? options[:compress].to_sym : nil
+
+raise "--data_out is mandatory for compressed output" if compress and not options[:data_out]
+
+rows     = []
+headings = nil
+comment  = true if options[:comment]
+no_keys  = options[:no_keys].each_with_object({}) { |i, h| h[i.to_sym] = true } if options[:no_keys]
+
+def columns_order(record)
+  record.keys.each do |key|
+    unless key.match(/^V\d+$/)
+      return record.keys
+    end
+  end
+
+  record.keys.sort { |a, b| a.to_s[1 .. a.to_s.size].to_i <=> b.to_s[1 .. a.to_s.size].to_i }
+end
+
+tab_out = options[:data_out] ? Filesys.open(options[:data_out], 'w', compress: compress) : STDOUT
+
+Biopieces.open(options[:stream_in], options[:stream_out]) do |input, output|
+  input.each do |record|
+    unless headings
+      if options[:keys]
+        headings = options[:keys].map { |k| k.to_sym }
+      else
+        headings = columns_order(record)
+      end
+
+      headings.reject! {|r| no_keys[r] } if options[:no_keys]
+    end
+
+    row = record.values_at(*headings)
+
+    if options[:pretty]
+      rows << row
+    else
+      if comment
+        tab_out.puts "#" + headings.join(options[:delimit]) unless headings.empty?
+        comment = false
+      end
+
+      tab_out.puts row.join(options[:delimit]) unless row.empty?
+    end
+
+    output.puts record unless options[:no_stream]
+  end
+end
+
+if options[:pretty]
+  table = Terminal::Table.new
+  table.headings = headings if options[:comment]
+
+  first_row = rows.first.dup
+
+  if options[:commify]
+    rows.each do |row|
+      row.each_with_index do |cell, i|
+        begin Integer(cell)
+          row[i] = cell.to_i.commify
+        rescue
+          begin Float(cell)
+            row[i] = cell.to_f.commify
+          rescue
+          end
+        end
+      end
+    end
+  end
+
+  table.rows = rows
+  
+  first_row.each_with_index do |cell, i|
+    begin Float(cell)
+      table.align_column(i, :right)
+    rescue
+    end
+  end
+
+  tab_out.puts table
+end
+
+tab_out.close
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+__END__

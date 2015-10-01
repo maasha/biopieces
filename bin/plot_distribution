@@ -1,0 +1,99 @@
+#!/usr/bin/env ruby
+
+# Copyright (C) 2007-2011 Martin A. Hansen.
+
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+
+# http://www.gnu.org/copyleft/gpl.html
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# Plot the distribution of numerical values for a specified key.
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+require 'maasha/biopieces'
+require 'gnuplot'
+require 'pp'
+
+terminals = "dumb,x11,aqua,post,pdf,png,svg"
+title     = "Distribution"
+ylabel    = "n"
+
+casts = []
+casts << {:long=>'key',        :short=>'k', :type=>'string', :mandatory=>true,  :default=>nil,    :allowed=>nil,       :disallowed=>nil}
+casts << {:long=>'no_stream',  :short=>'x', :type=>'flag',   :mandatory=>false, :default=>nil,    :allowed=>nil,       :disallowed=>nil}
+casts << {:long=>'data_out',   :short=>'o', :type=>'file',   :mandatory=>false, :default=>nil,    :allowed=>nil,       :disallowed=>nil}
+casts << {:long=>'terminal',   :short=>'t', :type=>'string', :mandatory=>false, :default=>'dumb', :allowed=>terminals, :disallowed=>nil}
+casts << {:long=>'title',      :short=>'T', :type=>'string', :mandatory=>false, :default=>title,  :allowed=>nil,       :disallowed=>nil}
+casts << {:long=>'xlabel',     :short=>'X', :type=>'string', :mandatory=>false, :default=>nil,    :allowed=>nil,       :disallowed=>nil}
+casts << {:long=>'ylabel',     :short=>'Y', :type=>'string', :mandatory=>false, :default=>ylabel, :allowed=>nil,       :disallowed=>nil}
+casts << {:long=>'logscale_y', :short=>'L', :type=>'flag',   :mandatory=>false, :default=>nil,    :allowed=>nil,       :disallowed=>nil}
+
+options = Biopieces.options_parse(ARGV, casts)
+
+key = options[:key].to_sym
+
+options[:xlabel] = key unless options[:xlabel]
+options[:ylabel] = "log10(#{options[:ylabel]})" if options[:logscale_y]
+
+count_hash = Hash.new(0)
+
+Biopieces.open(options[:stream_in], options[:stream_out]) do |input, output|
+  input.each_record do |record|
+    if record[key]
+      count_hash[record[key].to_i] += 1
+    end
+
+    output.puts record unless options[:no_stream]
+  end
+end
+
+x_max = count_hash.keys.max
+
+x = []
+y = []
+
+(0 .. x_max).each do |i|
+  x << i
+  y << count_hash[i]
+end
+
+Gnuplot.open do |gp|
+  Gnuplot::Plot.new(gp) do |plot|
+    plot.terminal options[:terminal]
+    plot.title    options[:title]
+    plot.xlabel   options[:xlabel]
+    plot.ylabel   options[:ylabel]
+    plot.output   options[:data_out] || "/dev/stderr"
+    plot.logscale "y"                if options[:logscale_y]
+    plot.xrange   "[#{x.min - 1}:#{x.max + 1}]"
+    plot.style    "fill solid 0.5 border"
+    plot.xtics    "out"
+    plot.ytics    "out"
+    
+    plot.data << Gnuplot::DataSet.new([x, y]) do |ds|
+      ds.with = "boxes"
+      ds.notitle
+    end
+  end
+end
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+__END__

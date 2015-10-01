@@ -1,0 +1,145 @@
+#!/usr/bin/env ruby
+
+# Copyright (C) 2007-2013 Martin A. Hansen.
+
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+
+# http://www.gnu.org/copyleft/gpl.html
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# This program is part of the Biopieces framework (www.biopieces.org).
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> DESCRIPTION <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# Read FASTQ entries from one or more files.
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+require 'maasha/biopieces'
+require 'maasha/fastq'
+
+MAX_TEST = 1_000
+
+allowed_enc = 'auto,base_33,base_64'
+
+casts = []
+casts << {:long=>'data_in',  :short=>'i', :type=>'files!', :mandatory=>false, :default=>nil,    :allowed=>nil,         :disallowed=>nil}
+casts << {:long=>'data_in2', :short=>'j', :type=>'files!', :mandatory=>false, :default=>nil,    :allowed=>nil,         :disallowed=>nil}
+casts << {:long=>'num',      :short=>'n', :type=>'uint',   :mandatory=>false, :default=>nil,    :allowed=>nil,         :disallowed=>'0'}
+casts << {:long=>'encoding', :short=>'e', :type=>'string', :mandatory=>false, :default=>'auto', :allowed=>allowed_enc, :disallowed=>nil}
+
+options = Biopieces.options_parse(ARGV, casts)
+
+encoding = options[:encoding].to_sym
+
+num  = 0
+last = false
+
+Biopieces.open(options[:stream_in], options[:stream_out]) do |input, output|
+  unless options[:data_in] and options[:data_in].first == '-'
+    input.each_record do |record|
+      output.puts record
+    end
+  end
+
+  if options[:data_in] and options[:data_in2]
+    raise "data_in files differ" if options[:data_in].size != options[:data_in2].size
+
+    (0 ... options[:data_in].size).each do |i|
+      file1 = options[:data_in][i]
+      file2 = options[:data_in2][i]
+
+      io1 = Fastq.open(file1, 'r')
+      io2 = Fastq.open(file2, 'r')
+
+      while entry1 = io1.get_entry and entry2 = io2.get_entry
+        if encoding == :auto
+          if entry1.qual_base33? or entry2.qual_base33?
+            encoding = :base_33
+          elsif entry1.qual_base64? or entry2.qual_base64?
+            encoding = :base_64
+          else
+            raise SeqError, "Could not auto-detect quality score encoding"
+          end
+        end
+
+        entry1.qual_convert!(encoding, :base_33)
+        entry2.qual_convert!(encoding, :base_33)
+        entry1.qual_coerce!(:base_33)
+        entry2.qual_coerce!(:base_33)
+
+        if num < MAX_TEST
+          raise SeqError, "Quality score outside valid range" unless entry1.qual_valid?(:base_33)
+          raise SeqError, "Quality score outside valid range" unless entry2.qual_valid?(:base_33)
+        end
+
+        output.puts entry1.to_bp
+        output.puts entry2.to_bp
+
+        num += 2
+
+        if options[:num] and num >= options[:num]
+          last = true
+          break
+        end
+      end
+
+      io1.close
+      io2.close
+
+      break if last
+    end
+  elsif options[:data_in]
+    options[:data_in].each do |file|
+      Fastq.open(file, 'r') do |fastq|
+        fastq.each do |entry|
+          if encoding == :auto
+            if entry.qual_base33?
+              encoding = :base_33
+            elsif entry.qual_base64?
+              encoding = :base_64
+            else
+              raise SeqError, "Could not auto-detect quality score encoding"
+            end
+          end
+
+          entry.qual_convert!(encoding, :base_33)
+          entry.qual_coerce!(:base_33)
+
+          if num < MAX_TEST
+            raise SeqError, "Quality score outside valid range" unless entry.qual_valid?(:base_33)
+          end
+
+          output.puts entry.to_bp
+          num += 1
+
+          if options[:num] == num
+            last = true
+            break
+          end
+        end
+      end
+
+      break if last
+    end
+  end
+end
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+__END__

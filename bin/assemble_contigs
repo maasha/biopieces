@@ -1,0 +1,165 @@
+#!/usr/bin/env perl
+
+# Copyright (C) 2007-2010 Martin A. Hansen.
+
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+
+# http://www.gnu.org/copyleft/gpl.html
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> DESCRIPTION <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# Calculate coverage of reads mapped to a backbone sequence.
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+use warnings;
+use strict;
+
+use Data::Dumper;
+use Maasha::Biopieces;
+use Maasha::Filesys;
+use Maasha::UCSC::Wiggle;
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+my ( $options, $in, $out, $record, $contig_hash, $i, $s_id, $q_id, $strand, $new_record, $contig, $beg, $end, @array, $min, $max, $mean );
+
+$options = Maasha::Biopieces::parse_options(
+    [
+        { long => 'q_id',   short => 'q', type => 'flag', mandatory => 'no', default => undef, allowed => undef, disallowed => undef },
+        { long => 'strand', short => 's', type => 'flag', mandatory => 'no', default => undef, allowed => undef, disallowed => undef },
+        { long => 'bridge', short => 'b', type => 'flag', mandatory => 'no', default => undef, allowed => undef, disallowed => undef },
+    ]   
+);
+
+$in  = Maasha::Biopieces::read_stream( $options->{ "stream_in" } );
+$out = Maasha::Biopieces::write_stream( $options->{ "stream_out" } );
+
+while ( $record = Maasha::Biopieces::get_record( $in ) ) 
+{
+    if ( $record->{ 'S_ID' } and $record->{ 'STRAND' } )
+    {
+        if ( $options->{ 'q_id' } ) {
+            next if not $record->{ 'Q_ID' };
+        } else {
+            $record->{ 'Q_ID' } = 'X';
+        }
+
+        if ( $options->{ 'strand' } ) {
+            next if not $record->{ 'STRAND' };
+        } else {
+            $record->{ 'STRAND' } = 'X';
+        }
+
+        if ( defined $record->{ 'S_BEG' } and defined $record->{ 'S_END' } )
+        {
+            for ( $i = $record->{ 'S_BEG' }; $i <= $record->{ 'S_END' }; $i++ ) {
+                $contig_hash->{ $record->{ 'S_ID' } }->{ $record->{ 'Q_ID' } }->{ $record->{ 'STRAND' } }->[ $i ]++;
+            }
+        }
+
+        if ( defined $record->{ 'S_BEG1' } and defined $record->{ 'S_END1' } and
+             defined $record->{ 'S_BEG2' } and defined $record->{ 'S_END2' } )
+        {
+            if ( $options->{ 'bridge' } )
+            {
+                ( $record->{ 'S_BEG1' }, $record->{ 'S_END2' } ) = ( $record->{ 'S_BEG2' }, $record->{ 'S_END1' } ) if ( $record->{ 'S_BEG1' } > $record->{ 'S_END2' } );
+
+                for ( $i = $record->{ 'S_BEG1' }; $i <= $record->{ 'S_END2' }; $i++ ) {
+                    $contig_hash->{ $record->{ 'S_ID' } }->{ $record->{ 'Q_ID' } }->{ $record->{ 'STRAND' } }->[ $i ]++;
+                }
+            }
+            else
+            {
+                for ( $i = $record->{ 'S_BEG1' }; $i <= $record->{ 'S_END1' }; $i++ ) {
+                    $contig_hash->{ $record->{ 'S_ID' } }->{ $record->{ 'Q_ID' } }->{ $record->{ 'STRAND' } }->[ $i ]++;
+                }
+
+                for ( $i = $record->{ 'S_BEG2' }; $i <= $record->{ 'S_END2' }; $i++ ) {
+                    $contig_hash->{ $record->{ 'S_ID' } }->{ $record->{ 'Q_ID' } }->{ $record->{ 'STRAND' } }->[ $i ]++;
+                }
+            }
+        }
+    }
+
+    # Maasha::Biopieces::put_record( $record, $out );
+}
+
+$contig = 0;
+
+foreach $s_id ( keys %{ $contig_hash } )
+{
+    foreach $q_id ( keys %{ $contig_hash->{ $s_id } } )
+    {
+        foreach $strand ( keys %{ $contig_hash->{ $s_id }->{ $q_id } } )
+        {
+            $beg = 0;
+            $end = 0;
+
+            while ( ( $beg, $end ) = Maasha::UCSC::Wiggle::fixedstep_scan( $contig_hash->{ $s_id }->{ $q_id }->{ $strand }, $beg ) )
+            {
+                @array = @{ $contig_hash->{ $s_id }->{ $q_id }->{ $strand } }[ $beg .. $end - 1 ];
+
+                ( $min, $max ) = Maasha::Calc::minmax( \@array );
+                $mean          = Maasha::Calc::mean( \@array );
+
+                $new_record->{ 'S_ID' }        = $s_id;
+                $new_record->{ 'Q_ID' }        = $q_id   if $options->{ 'q_id' };
+                $new_record->{ 'STRAND' }      = $strand if $options->{ 'strand' };
+                $new_record->{ 'S_BEG' }       = $beg;
+                $new_record->{ 'S_END' }       = $end;
+                $new_record->{ 'CONTIG_ID' }   = $contig;
+                $new_record->{ 'CONTIG_LEN' }  = $end - $beg + 1;
+                $new_record->{ 'CONTIG_MIN' }  = $min;
+                $new_record->{ 'CONTIG_MAX' }  = $max;
+                $new_record->{ 'CONTIG_MEAN' } = sprintf "%.2f", $mean;
+                $new_record->{ 'CONTIG' }      = join ( ";", @array );
+
+                $beg = $end + 1;
+                $contig++;
+
+                Maasha::Biopieces::put_record( $new_record, $out );
+            }
+        }
+    }
+}
+
+Maasha::Biopieces::close_stream( $in );
+Maasha::Biopieces::close_stream( $out );
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+BEGIN
+{
+    Maasha::Biopieces::status_set();
+}
+
+
+END
+{
+    Maasha::Biopieces::status_log();
+}
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+__END__

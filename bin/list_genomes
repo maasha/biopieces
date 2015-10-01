@@ -1,0 +1,103 @@
+#!/usr/bin/env perl
+
+# Copyright (C) 2007-2009 Martin A. Hansen.
+
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+
+# http://www.gnu.org/copyleft/gpl.html
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> DESCRIPTION <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# Display available genomes.
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+use warnings;
+use strict;
+use Term::ANSIColor;
+use Maasha::Common;
+use Maasha::Biopieces;
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+my ( $options, @genomes, $genome, @formats, $format, %hash, %found, @row );
+
+$options = Maasha::Biopieces::parse_options();
+
+@genomes = Maasha::Filesys::ls_dirs( "$ENV{ 'BP_DATA' }/genomes" );
+
+foreach $genome ( @genomes )
+{
+    next if $genome =~ /\.$/;
+
+    @formats = Maasha::Filesys::ls_dirs( $genome );
+
+    foreach $format ( @formats )
+    {
+        if ( $format =~ /\/([^\/]+)\/(\w+)$/ )
+        {
+            $hash{ $1 }{ $2 } = 1;
+
+            $found{ $2 } = 1;
+        }
+    }
+}
+
+@row = "Genome";
+
+map { push @row, $_ } sort keys %found;
+
+print join( "\t", @row ), "\n";
+
+foreach $genome ( sort keys %hash )
+{
+    @row = $genome;
+
+    foreach $format ( sort keys %found )
+    {
+        if ( exists $hash{ $genome }{ $format } ) {
+            push @row, colored( "yes", "green" );
+        } else {
+            push @row, colored( "no", "red" );
+        }
+    }
+
+    print join( "\t", @row ), "\n";
+}
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+BEGIN
+{
+    Maasha::Biopieces::status_set();
+}
+
+
+END
+{
+    Maasha::Biopieces::status_log();
+}
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+__END__

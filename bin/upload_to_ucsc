@@ -1,0 +1,252 @@
+#!/usr/bin/env perl
+
+# Copyright (C) 2007-2009 Martin A. Hansen.
+
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+
+# http://www.gnu.org/copyleft/gpl.html
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> DESCRIPTION <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# Upload data to local UCSC Genome Browser Database.
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+use warnings;
+use strict;
+use Maasha::Common;
+use Maasha::Biopieces;
+use Maasha::Filesys;
+use Maasha::UCSC;
+use Maasha::UCSC::Wiggle;
+use Maasha::UCSC::PSL;
+use Maasha::UCSC::BED;
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+my ( $options, $in, $out, $record, $tmp_dir, $file, $wib_file, $wig_file, $wib_dir, $fh_out, $i, $first, $format, $type, $columns, $append, $entry );
+
+$options = Maasha::Biopieces::parse_options(
+    [
+        { long => 'database',    short => 'd', type => 'string', mandatory => 'yes', default => undef,             allowed => undef,                         disallowed => undef },
+        { long => 'table',       short => 't', type => 'string', mandatory => 'yes', default => undef,             allowed => undef,                         disallowed => undef },
+        { long => 'no_stream',   short => 'x', type => 'flag',   mandatory => 'no',  default => undef,             allowed => undef,                         disallowed => undef },
+        { long => 'short_label', short => 's', type => 'string', mandatory => 'no',  default => undef,             allowed => undef,                         disallowed => undef },
+        { long => 'long_label',  short => 'l', type => 'string', mandatory => 'no',  default => undef,             allowed => undef,                         disallowed => undef },
+        { long => 'group',       short => 'g', type => 'string', mandatory => 'no',  default => $ENV{ 'LOGNAME' }, allowed => undef,                         disallowed => undef },
+        { long => 'priority',    short => 'p', type => 'float',  mandatory => 'no',  default => 1,                 allowed => undef,                         disallowed => undef },
+        { long => 'use_score',   short => 'u', type => 'flag',   mandatory => 'no',  default => undef,             allowed => undef,                         disallowed => undef },
+        { long => 'visibility',  short => 'V', type => 'string', mandatory => 'no',  default => 'pack',            allowed => 'hide,dense,squish,pack,full', disallowed => undef },
+        { long => 'color',       short => 'c', type => 'string', mandatory => 'no',  default => undef,             allowed => undef,                         disallowed => undef },
+        { long => 'check',       short => 'C', type => 'flag',   mandatory => 'no',  default => undef,             allowed => undef,                         disallowed => undef },
+    ]   
+);
+
+$in  = Maasha::Biopieces::read_stream( $options->{ "stream_in" } );
+$out = Maasha::Biopieces::write_stream( $options->{ "stream_out" } );
+
+$tmp_dir = Maasha::Biopieces::get_tmpdir();
+
+$options->{ "short_label" } ||= $options->{ 'table' };
+$options->{ "long_label" }  ||= $options->{ 'table' };
+$options->{ "color" }       ||= join( ",", int( rand( 255 ) ), int( rand( 255 ) ), int( rand( 255 ) ) );
+$options->{ "chunk_size" }  ||= 10_000_000_000;    # Due to 32-bit UCSC compilation really large tables cannot be loaded in one go.
+
+$file   = "$tmp_dir/ucsc_upload.tmp";
+$append = 0;
+$first  = 1;
+$i      = 0;
+
+$fh_out = Maasha::Filesys::file_write_open( $file );
+
+while ( $record = Maasha::Biopieces::get_record( $in ) ) 
+{
+    Maasha::Biopieces::put_record( $record, $out ) if not $options->{ "no_stream" };
+
+    if ( $record->{ "REC_TYPE" } eq "fixed_step" )
+    {
+        $format = "WIGGLE";
+
+        if ( $entry = Maasha::UCSC::Wiggle::biopiece2fixedstep( $record ) ) {
+            Maasha::UCSC::Wiggle::fixedstep_entry_put( $entry, $fh_out );
+        }
+    }
+    elsif ( $record->{ "REC_TYPE" } eq "PSL" )
+    {
+        $format = "PSL";
+
+        Maasha::UCSC::PSL::psl_put_header( $fh_out ) if $first;
+        Maasha::UCSC::PSL::psl_put_entry( $record, $fh_out );
+        
+        $first = 0;
+    }
+    elsif ( $record->{ "REC_TYPE" } eq "BED" and $record->{ "SEC_STRUCT" } )
+    {
+        # chrom chromStart  chromEnd    name    score   strand  size    secStr  conf 
+
+        $format  = "BED_SS";
+
+        print $fh_out join ( "\t",
+            $record->{ "CHR" },
+            $record->{ "CHR_BEG" },
+            $record->{ "CHR_END" } + 1,
+            $record->{ "Q_ID" },
+            $record->{ "SCORE" },
+            $record->{ "STRAND" },
+            $record->{ "SIZE" },
+            $record->{ "SEC_STRUCT" },
+            $record->{ "CONF" },
+        ), "\n";
+    }
+    elsif ( $record->{ "REC_TYPE" } eq "BED" )
+    {
+        $format  = "BED";
+        $columns = $record->{ "BED_COLS" };
+
+        if ( $entry = Maasha::UCSC::BED::biopiece2bed( $record, $columns ) ) {
+            Maasha::UCSC::BED::bed_entry_put( $entry, $fh_out, $columns, $options->{ 'check' } );
+        }
+    }
+    elsif ( $record->{ "REC_TYPE" } eq "PATSCAN" and $record->{ "CHR" } )
+    {
+        $format  = "BED";
+        $columns = 6;
+
+        if ( $entry = Maasha::UCSC::BED::biopiece2bed( $record, $columns ) ) {
+            Maasha::UCSC::BED::bed_entry_put( $entry, $fh_out, $columns, $options->{ 'check' } );
+        }
+    }
+    elsif ( $record->{ "REC_TYPE" } eq "BLAST" and $record->{ "S_ID" } =~ /^chr/ )
+    {
+        $format  = "BED";
+        $columns = 6;
+
+        $record->{ "SCORE" } = $record->{ "BIT_SCORE" } * 1000;
+
+        if ( $entry = Maasha::UCSC::BED::biopiece2bed( $record, $columns ) ) {
+            Maasha::UCSC::BED::bed_entry_put( $entry, $fh_out, $columns, $options->{ 'check' } );
+        }
+    }
+    elsif ( $record->{ "REC_TYPE" } eq "VMATCH" and $record->{ "S_ID" } =~ /^chr/i )
+    {
+        $format  = "BED";
+        $columns = 6;
+
+        if ( $entry = Maasha::UCSC::BED::biopiece2bed( $record, $columns ) ) {
+            Maasha::UCSC::BED::bed_entry_put( $entry, $fh_out, $columns, $options->{ 'check' } );
+        }
+    }
+
+    if ( $i == $options->{ "chunk_size" } )
+    {
+        close $fh_out;
+
+        if ( $format eq "BED" ) {
+            Maasha::UCSC::BED::bed_upload_to_ucsc( $tmp_dir, $file, $options, $append );
+        } elsif ( $format eq "PSL" ) {
+            Maasha::UCSC::BED::psl_upload_to_ucsc( $file, $options, $append ); 
+        }
+
+        unlink $file;
+
+        $first = 1;
+
+        $append = 1;
+
+        $fh_out = Maasha::Filesys::file_write_open( $file );
+    }
+
+    $i++;
+}
+
+close $fh_out;
+
+if ( $format eq "BED" )
+{
+    $type = "bed $columns";
+
+    Maasha::UCSC::BED::bed_upload_to_ucsc( $tmp_dir, $file, $options, $append );
+}
+elsif ( $format eq "BED_SS" )
+{
+    $type = "type bed 6 +";
+
+    Maasha::UCSC::BED::bed_upload_to_ucsc( $tmp_dir, $file, $options, $append );
+}
+elsif ( $format eq "PSL" )
+{
+    $type = "psl";
+
+    Maasha::UCSC::PSL::psl_upload_to_ucsc( $file, $options, $append ); 
+}
+elsif ( $format eq "WIGGLE" )
+{
+    $options->{ "visibility" } = "full";
+
+    $wig_file = "$options->{ 'table' }.wig";
+    $wib_file = "$options->{ 'table' }.wib";
+
+    $wib_dir  = "$ENV{ 'HOME' }/ucsc/wib";
+
+    Maasha::Filesys::dir_create_if_not_exists( $wib_dir );
+
+    if ( $options->{ 'verbose' } ) {
+        `cd $tmp_dir && wigEncode $file $wig_file $wib_file`;
+    } else {
+        `cd $tmp_dir && wigEncode $file $wig_file $wib_file > /dev/null 2>&1`;
+    }
+
+    Maasha::Common::run( "mv", "$tmp_dir/$wib_file $wib_dir" );
+
+    unlink $file;
+
+    $file = $wig_file;
+
+    $type = "wig 0";
+
+    Maasha::UCSC::Wiggle::wiggle_upload_to_ucsc( $tmp_dir, $wib_dir, $file, $options );
+}
+
+unlink $file;
+
+Maasha::UCSC::ucsc_update_config( $options, $type );
+
+Maasha::Biopieces::close_stream( $in );
+Maasha::Biopieces::close_stream( $out );
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+BEGIN
+{
+    Maasha::Biopieces::status_set();
+}
+
+
+END
+{
+    Maasha::Biopieces::status_log();
+}
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+__END__

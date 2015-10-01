@@ -1,0 +1,75 @@
+#!/usr/bin/env ruby
+
+# Copyright (C) 2007-2012 Martin A. Hansen.
+
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+
+# http://www.gnu.org/copyleft/gpl.html
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# This program is part of the Biopieces framework (www.biopieces.org).
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> DESCRIPTION <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# Order records with pair end sequence data.
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+require 'maasha/biopieces'
+require 'pp'
+
+options = Biopieces.options_parse(ARGV)
+
+hash = {}
+
+Biopieces.open(options[:stream_in], options[:stream_out]) do |input, output|
+  input.each_record do |record|
+    if record[:SEQ_NAME]
+      seq_name = record[:SEQ_NAME]
+
+      case seq_name
+      when /^(.+)\/(\d)$/   # Illumina 1.5
+        name = $1.to_sym
+        pair = $2.to_i
+        type = 15
+      when /^(.+) (\d):/    # Illumina 1.8
+        name = $1.to_sym
+        pair = $2.to_i
+        type = 18
+      else
+        $stderr.puts "WARNING: Unmatched sequence name: #{record[:SEQ_NAME]}"
+      end
+
+      if hash[name]
+        if pair == 1
+          output.puts({:SEQ_NAME => seq_name})
+          output.puts({:SEQ_NAME => (type == 15) ? seq_name.sub(/\d$/, '2') : seq_name.sub(/ \d:/, ' 2:')})
+        else
+          output.puts({:SEQ_NAME => (type == 15) ? seq_name.sub(/\d$/, '1') : seq_name.sub(/ \d:/, ' 1:')})
+          output.puts({:SEQ_NAME => seq_name})
+        end
+      else
+        hash[name] = true
+      end
+    end
+  end
+end
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+__END__

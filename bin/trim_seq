@@ -1,0 +1,66 @@
+#!/usr/bin/env ruby
+
+# Copyright (C) 2007-2012 Martin A. Hansen.
+
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+
+# http://www.gnu.org/copyleft/gpl.html
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# This program is part of the Biopieces framework (www.biopieces.org).
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> DESCRIPTION <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# Trim sequence ends removing residues with a low quality score.
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+require 'maasha/biopieces'
+require 'maasha/seq'
+require 'pp'
+
+casts = []
+casts << {:long=>'min_qual', :short=>'m', :type=>'uint',   :mandatory=>true, :default=>20,     :allowed=>nil,               :disallowed=>'0'}
+casts << {:long=>'min_len',  :short=>'l', :type=>'uint',   :mandatory=>true, :default=>3,      :allowed=>nil,               :disallowed=>'0'}
+casts << {:long=>'trim',     :short=>'t', :type=>'string', :mandatory=>true, :default=>'both', :allowed=>'left,right,both', :disallowed=>nil}
+
+options = Biopieces.options_parse(ARGV, casts)
+
+trim = options[:trim].to_sym
+
+Biopieces.open(options[:stream_in], options[:stream_out]) do |input, output|
+  input.each_record do |record|
+    if record[:SEQ] and record[:SCORES]
+      entry = Seq.new_bp(record)
+
+      case trim
+      when :both  then entry.quality_trim!(options[:min_qual], options[:min_len])
+      when :left  then entry.quality_trim_left!(options[:min_qual], options[:min_len])
+      when :right then entry.quality_trim_right!(options[:min_qual], options[:min_len])
+      end
+
+      record.merge! entry.to_bp
+    end
+
+    output.puts record
+  end
+end
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+__END__

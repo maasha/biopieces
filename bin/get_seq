@@ -1,0 +1,192 @@
+#!/usr/bin/env perl
+
+# Copyright (C) 2007-2009 Martin A. Hansen.
+
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+
+# http://www.gnu.org/copyleft/gpl.html
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> DESCRIPTION <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# Extract subsequences from an indexed sequence file.
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+use warnings;
+use strict;
+use Data::Dumper;
+use Maasha::Biopieces;
+use Maasha::Filesys;
+use Maasha::Fasta;
+use Maasha::Seq;
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+my ( $options, $in, $out, $index, $fh, $record, $index_beg, $index_len, $beg, $end, $len, $seq );
+
+$options = Maasha::Biopieces::parse_options(
+    [
+        { long => 'index',    short => 'i', type => 'string', mandatory => 'yes', default => undef, allowed => undef, disallowed => undef },
+        { long => 'seq_name', short => 's', type => 'string', mandatory => 'no',  default => undef, allowed => undef, disallowed => undef },
+        { long => 'beg',      short => 'b', type => 'uint',   mandatory => 'no',  default => undef, allowed => undef, disallowed => 0 },
+        { long => 'end',      short => 'e', type => 'uint',   mandatory => 'no',  default => undef, allowed => undef, disallowed => 0 },
+        { long => 'len',      short => 'l', type => 'uint',   mandatory => 'no',  default => undef, allowed => undef, disallowed => 0 },
+    ]   
+);
+
+$in  = Maasha::Biopieces::read_stream( $options->{ "stream_in" } );
+$out = Maasha::Biopieces::write_stream( $options->{ "stream_out" } );
+
+if ( $options->{ 'beg' } ) {
+    $options->{ 'beg' }--;
+} else {
+    $options->{ 'beg' } = 0;
+}
+
+$index = Maasha::Fasta::index_retrieve( $options->{ 'index' } . ".index" );
+
+if ( $index->{ 'FILE_SIZE' } != Maasha::Filesys::file_size( $options->{ 'index' } . ".seq" ) ) {
+    Maasha::Common::error( qq(Filesize mismatch: $options->{ 'index' }.seq != $index->{ 'FILE_SIZE' }) );
+}
+
+$fh = Maasha::Filesys::file_read_open( $options->{ 'index' } . ".seq" );
+
+
+if ( $options->{ 'seq_name' } and exists $index->{ $options->{ 'seq_name' } } )
+{
+    ( $index_beg, $index_len ) = @{ $index->{ $options->{ 'seq_name' } } };
+
+    $beg = $options->{ 'beg' };
+    $end = $options->{ 'end' };
+    $len = $options->{ 'len' };
+
+    $seq = seq_get( $fh, $index_beg, $index_len, $beg, $end, $len );
+
+    if ( $seq )
+    {
+        $record->{ 'SEQ_NAME' } = $options->{ 'seq_name' };
+        $record->{ 'SEQ' }      = $seq;
+        $record->{ 'SEQ_LEN' }  = length $record->{ 'SEQ' };
+
+        Maasha::Biopieces::put_record( $record, $out );
+    }
+}
+
+
+while ( $record = Maasha::Biopieces::get_record( $in ) )
+{
+    if ( exists $index->{ $record->{ 'SEQ_NAME' } } )
+    {
+        ( $index_beg, $index_len ) = @{ $index->{ $record->{ 'SEQ_NAME' } } };
+
+        $beg = $record->{ 'BEG' } || $options->{ 'beg' };
+        $end = $record->{ 'END' } || $options->{ 'end' };
+        $len = $record->{ 'LEN' } || $options->{ 'len' };
+
+        $seq = seq_get( $fh, $index_beg, $index_len, $beg, $end, $len );
+
+        if ( $seq )
+        {
+            $record->{ 'SEQ' }      = $seq;
+            $record->{ 'SEQ_LEN' }  = length $record->{ 'SEQ' };
+        }
+    }
+
+    Maasha::Biopieces::put_record( $record, $out );
+}
+
+close $fh;
+
+Maasha::Biopieces::close_stream( $in );
+Maasha::Biopieces::close_stream( $out );
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+sub seq_get
+{
+    # Martin A. Hansen, September 2009.
+    
+    # Adjust the index coordianates according to specified options,
+    # and retrieves the sequence thus specified. The sequence is
+    # returned.
+
+    my ( $fh,          # filehandle to sequence file
+         $index_beg,   # begin position of sequence entry
+         $index_len,   # length of sequence entry
+         $opt_beg,     # optional begin position - OPTIONAL
+         $opt_end,     # optional end position   - OPTIONAL
+         $opt_len,     # optional length         - OPTIONAL
+       ) = @_;
+
+    # Returns a string.
+
+    my ( $beg, $len, $seq );
+
+    $beg = $index_beg;
+    
+    if ( $opt_beg ) {
+        $beg += $opt_beg;
+    }
+
+    if ( $opt_len )
+    {
+        $len = $opt_len;
+    }
+    elsif ( $opt_end )
+    {
+        $len = $opt_end - $opt_beg;
+    }
+    else
+    {
+        $len = $index_len - $opt_beg;
+    }
+
+    if ( $len > $index_len - $opt_beg ) {
+        $len = $index_len - $opt_beg;
+    }
+
+    return if $beg > $index_beg + $index_len - 1 or $len <= 0;
+
+    $seq = Maasha::Filesys::file_read( $fh, $beg, $len );
+
+    return $seq;
+}
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+BEGIN
+{
+    Maasha::Biopieces::status_set();
+}
+
+
+END
+{
+    Maasha::Biopieces::status_log();
+}
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+__END__

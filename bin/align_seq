@@ -1,0 +1,99 @@
+#!/usr/bin/env perl
+
+# Copyright (C) 2007-2009 Martin A. Hansen.
+
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+
+# http://www.gnu.org/copyleft/gpl.html
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> DESCRIPTION <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# Align sequences in the stream.
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+use warnings;
+use strict;
+use Maasha::Biopieces;
+use Maasha::Align;
+
+use constant {
+    SEQ_NAME => 0,
+    SEQ      => 1,
+};
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+my ( $options, $in, $out, $record, @entries, $entry );
+
+$options = Maasha::Biopieces::parse_options();
+
+$in  = Maasha::Biopieces::read_stream( $options->{ "stream_in" } );
+$out = Maasha::Biopieces::write_stream( $options->{ "stream_out" } );
+
+while ( $record = Maasha::Biopieces::get_record( $in ) ) 
+{
+    if ( $record->{ "SEQ_NAME" } and $record->{ "SEQ" } ) {  # TODO use biopieces2fasta() instead
+        push @entries, [ $record->{ "SEQ_NAME" }, $record->{ "SEQ" } ];
+    } elsif ( $record->{ "Q_ID" } and $record->{ "SEQ" } ) {
+        push @entries, [ $record->{ "Q_ID" }, $record->{ "SEQ" } ];
+    } else {
+        Maasha::Biopieces::put_record( $record, $out );
+    }
+}
+
+@entries = Maasha::Align::align( \@entries );
+
+foreach $entry ( @entries )
+{
+    if ( $entry->[ SEQ_NAME ] and $entry->[ SEQ ] )
+    {
+        $record = {
+            SEQ_NAME => $entry->[ SEQ_NAME ],
+            SEQ      => $entry->[ SEQ ],
+            SEQ_LEN  => length $entry->[ SEQ ],
+        };
+
+        Maasha::Biopieces::put_record( $record, $out );
+    }
+}
+
+Maasha::Biopieces::close_stream( $in );
+Maasha::Biopieces::close_stream( $out );
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+BEGIN
+{
+    Maasha::Biopieces::status_set();
+}
+
+
+END
+{
+    Maasha::Biopieces::status_log();
+}
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+__END__

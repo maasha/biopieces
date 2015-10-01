@@ -1,0 +1,267 @@
+#!/usr/bin/env ruby
+
+# Copyright (C) 2007-2012 Martin A. Hansen.
+
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+
+# http://www.gnu.org/copyleft/gpl.html
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# This program is part of the Biopieces framework (www.biopieces.org).
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> DESCRIPTION <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# Denoises sequences with quality scores in the stream.
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+require 'pp'
+require 'maasha/biopieces'
+require 'maasha/seq'
+require 'maasha/fastq'
+require 'maasha/fasta'
+require 'maasha/align'
+require 'maasha/usearch'
+
+class Seq
+  ALPH_DNA  = %w{A T C G}
+  ALPH_AMBI = %w{A T C G M R W S Y K V H D B N}
+
+  BIT_INDEL = 0
+  BIT_A = 1 << 0
+  BIT_T = 1 << 1
+  BIT_C = 1 << 2
+  BIT_G = 1 << 3
+
+  BIT_M = BIT_A | BIT_C
+  BIT_R = BIT_A | BIT_G
+  BIT_W = BIT_A | BIT_T
+  BIT_S = BIT_C | BIT_G
+  BIT_Y = BIT_C | BIT_T
+  BIT_K = BIT_G | BIT_T
+  BIT_V = BIT_A | BIT_C | BIT_G
+  BIT_H = BIT_A | BIT_C | BIT_T
+  BIT_D = BIT_A | BIT_G | BIT_T
+  BIT_B = BIT_C | BIT_G | BIT_T
+  BIT_N = BIT_G | BIT_A | BIT_T | BIT_C
+
+  BITMAP = [
+    BIT_A,
+    BIT_T,
+    BIT_C,
+    BIT_G,
+    BIT_M,
+    BIT_R,
+    BIT_W,
+    BIT_S,
+    BIT_Y,
+    BIT_K,
+    BIT_V,
+    BIT_H,
+    BIT_D,
+    BIT_B,
+    BIT_N
+  ]
+
+  TR_NUC = "-" + ALPH_AMBI.join("").downcase
+  TR_HEX = [BIT_INDEL].pack("C") + BITMAP.pack("C*")
+
+  def to_na
+    entry      = Seq.new
+    entry.seq  = NArray.to_na(self.seq.downcase.tr(TR_NUC, TR_HEX), "byte")
+    entry.qual = NArray.to_na(self.qual, "byte") - Seq::SCORE_BASE if self.qual
+    entry
+  end
+end
+
+class Align
+  def to_na
+    cols = self.length
+    rows = self.members
+
+    na_seq  = NArray.byte(cols, rows)
+    na_qual = NArray.byte(cols, rows)
+
+    self.entries.each_with_index do |entry, i|
+      na_entry = entry.to_na
+      na_seq[true, i]  = na_entry.seq
+      na_qual[true, i] = na_entry.qual
+    end
+
+    return na_seq, na_qual
+  end
+end
+
+class Denoise
+  attr_reader :align
+
+  ROW_A = 0
+  ROW_T = 1
+  ROW_C = 2
+  ROW_G = 3
+
+  def initialize(align, options)
+    @align   = align
+    @options = options
+    @cols    = align.length
+    @rows    = align.members
+    @na_seq, @na_qual = align.to_na
+    @na_rescored = nil
+  end
+
+  def denoise_sequences
+    freq = NArray.int(@cols, 4)
+
+    freq[true, ROW_A] = (@na_seq & Seq::BIT_A > 0).to_type("int").sum(1)
+    freq[true, ROW_T] = (@na_seq & Seq::BIT_T > 0).to_type("int").sum(1)
+    freq[true, ROW_C] = (@na_seq & Seq::BIT_C > 0).to_type("int").sum(1)
+    freq[true, ROW_G] = (@na_seq & Seq::BIT_G > 0).to_type("int").sum(1)
+
+    mask_freq = freq.eq freq.max(1)
+
+    mask_freq[true, ROW_A] *= Seq::BIT_A
+    mask_freq[true, ROW_T] *= Seq::BIT_T
+    mask_freq[true, ROW_C] *= Seq::BIT_C
+    mask_freq[true, ROW_G] *= Seq::BIT_G
+
+    mask_replace = mask_freq.max(1)
+
+    mask_bad = @na_qual <= @options[:quality_min]
+
+    @na_rescored = mask_bad.dup
+
+    new_values = mask_replace * mask_bad
+    old_values = mask_bad.eq(0) * @na_seq
+
+    old_scores = @na_qual * mask_bad.eq(0)
+
+    sum   = old_scores.to_type("float").sum(1)
+    count = (old_scores > 0).to_type("int").sum(1)
+    mean  = (sum / count).to_type("byte")
+
+    new_scores = mask_bad * mean
+
+    @na_seq  = new_values + old_values
+    @na_qual = new_scores + old_scores
+
+    self
+  end
+
+  # Method that lowercase residues that have been removed during
+  # the determination of the consensus sequence.
+  def mask_sequences
+    @align.each_with_index do |entry, i|
+      entry.qual = (@na_qual[true, i] + Seq::SCORE_BASE).to_s
+
+      j = 0
+
+      while entry.seq[j] do
+        if @na_rescored[j, i] == 0
+          entry.seq[j] = entry.seq[j].upcase
+        else
+          entry.seq[j] = entry.seq[j].downcase
+        end
+
+        j += 1
+      end
+    end
+  end
+end
+
+casts = []
+casts << {:long=>'cluster_ident', :short=>'i', :type=>'float', :mandatory=>true,  :default=>0.97, :allowed=>nil, :disallowed=>nil}
+casts << {:long=>'sequence_min',  :short=>'s', :type=>'uint',  :mandatory=>true,  :default=>1,    :allowed=>nil, :disallowed=>"0"}
+casts << {:long=>'residue_min',   :short=>'r', :type=>'float', :mandatory=>true,  :default=>0.3,  :allowed=>nil, :disallowed=>nil}
+casts << {:long=>'gap_max',       :short=>'g', :type=>'float', :mandatory=>true,  :default=>0.4,  :allowed=>nil, :disallowed=>nil}
+casts << {:long=>'quality_min',   :short=>'q', :type=>'uint',  :mandatory=>true,  :default=>10,   :allowed=>nil, :disallowed=>nil}
+casts << {:long=>'quality_mean',  :short=>'Q', :type=>'uint',  :mandatory=>true,  :default=>15,   :allowed=>nil, :disallowed=>nil}
+casts << {:long=>'cpus',          :short=>'C', :type=>'uint',  :mandatory=>true,  :default=>1,    :allowed=>nil, :disallowed=>"0"}
+
+options          = Biopieces.options_parse(ARGV, casts)
+tmpdir           = Biopieces.mktmpdir
+fastq_file       = File.join(tmpdir, "test.fq")
+fasta_file       = File.join(tmpdir, "test.fna")
+fasta_file_align = File.join(tmpdir, "test.aln.fna")
+
+options[:identity] = options[:cluster_ident]
+options[:msa]      = true
+
+def alignment_to_fastq(entries, index)
+  entries.each do |entry|
+    seq_name = entry.seq_name.sub(/^\*/, '')
+    elem     = index.get(seq_name)   # disk based lookup
+
+    entry.seq_name = elem.seq_name
+    entry.qual     = elem.qual
+
+    entry.seq.scan(/-+/) do |m|
+      entry.qual = entry.qual[0 ... $`.length] + ('!' * m.length) + entry.qual[$`.length .. -1]
+    end
+  end
+end
+
+index     = FastqIndex.new
+seq_count = 0
+
+Biopieces.open(options[:stream_in], options[:stream_out]) do |input, output|
+  Fasta.open(fasta_file, "w") do |fasta_io|
+    Fastq.open(fastq_file, "w") do |fastq_io|
+      input.each_record do |record|
+        if record[:SEQ] and record[:SCORES]
+          entry = Seq.new_bp(record)
+          orig_name = entry.seq_name.dup
+          entry.seq_name = seq_count.to_s
+
+          fasta_io.puts entry.to_fasta
+          fastq_io.puts entry.to_fastq
+
+          index.add(entry, orig_name)
+
+          seq_count += 1
+        else
+          output.puts record
+        end
+      end
+    end
+  end
+
+  fastq_io  = File.open(fastq_file, "r")
+  index.ios = fastq_io
+
+  uc = Usearch.new(fasta_file, fasta_file_align, options)
+  uc.sortbylength
+  uc.cluster_smallmem
+
+  uc.each_alignment do |align|
+    align.options = options
+    alignment_to_fastq(align.entries, index)
+
+    dn = Denoise.new(align, options)
+    dn.denoise_sequences
+    dn.mask_sequences
+
+    if options[:verbose]
+      puts dn.align
+    else
+      dn.align.each do |entry|
+        output.puts entry.to_bp
+      end
+    end
+  end
+end
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+

@@ -1,0 +1,208 @@
+#!/usr/bin/env perl
+
+# Copyright (C) 2007-2010 Martin A. Hansen.
+
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+
+# http://www.gnu.org/copyleft/gpl.html
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> DESCRIPTION <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# Read 454 entries from fasta and quality file.
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+use warnings;
+use strict;
+use Data::Dumper;
+use Maasha::Biopieces;
+use Maasha::Filesys;
+use Maasha::Fasta;
+use Maasha::Fastq;
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+my ( $options, $in, $out, $record, $data_in, $qual_in, $num, $fasta, $qual, @seqs, @scores, $i );
+
+$options = Maasha::Biopieces::parse_options(
+    [
+        { long => 'data_in', short => 'i', type => 'file!',  mandatory => 'yes', default => undef, allowed => undef, disallowed => undef },
+        { long => 'qual_in', short => 'q', type => 'file!',  mandatory => 'yes', default => undef, allowed => undef, disallowed => undef },
+        { long => 'num',     short => 'n', type => 'uint',   mandatory => 'no',  default => undef, allowed => undef, disallowed => '0' },
+    ]   
+);
+
+$in  = Maasha::Biopieces::read_stream( $options->{ "stream_in" } );
+$out = Maasha::Biopieces::write_stream( $options->{ "stream_out" } );
+
+while ( $record = Maasha::Biopieces::get_record( $in ) ) {
+    Maasha::Biopieces::put_record( $record, $out );
+}
+
+if ( $options->{ 'data_in' } )
+{
+    $data_in = Maasha::Filesys::file_read_open( $options->{ 'data_in' } );
+    $qual_in = Maasha::Filesys::file_read_open( $options->{ 'qual_in' } );
+
+    $num = 1;
+
+    while ( $fasta = Maasha::Fasta::get_entry( $data_in ) )
+    {
+        $qual = get_qual( $qual_in );
+        
+        check_names( $fasta, $qual );
+        check_lengths( $fasta, $qual );
+
+        $record = {
+            SEQ_NAME    => $fasta->[ 0 ],
+            SEQ         => $fasta->[ 1 ],
+            SEQ_LEN     => length $fasta->[ 1 ],
+            SCORES      => $qual->[ 1 ],
+        };
+
+        Maasha::Biopieces::put_record( $record, $out );
+
+        last if $options->{ "num" } and $num == $options->{ "num" };
+
+        $num++;
+    }
+
+    close $data_in;
+    close $qual_in;
+}
+
+Maasha::Biopieces::close_stream( $in );
+Maasha::Biopieces::close_stream( $out );
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+sub get_qual
+{
+    # Martin A. Hansen, May 2010.
+    
+    # Get the next 454 quality entry from an open file.
+
+    my ( $fh,   # file handle
+       ) = @_;
+
+    # Returns list.
+
+    my ( $block, $name, $qual, $scores, $entry );
+
+    local $/ = "\n>";
+
+    while ( $block = <$fh> )
+    {
+        chomp $block;
+
+        last if $block !~ /^\s+$/;
+    }
+
+    return if not defined $block;
+
+    $block =~ /^>?(.+)\n/m;
+    $name = $1;
+    $qual = $';
+
+    local $/ = "\n";
+
+    chomp $qual;
+
+    $name =~ tr/\r//d;
+    $qual =~ tr/ \n\r/;;;/;
+    $qual =~ s/;;/;/g;
+
+    $scores = Maasha::Fastq::dec_str2phred_str( $qual );
+
+    $entry = [ $name, $scores ];
+
+    return wantarray ? @{ $entry } : $entry;
+}
+
+
+sub check_names
+{
+    # Martin A. Hansen, May 2010.
+
+    # Check if the names of the fasta and qual entries match
+    # and raise an error if they don't.
+
+    my ( $fasta,    # fasta entry
+         $qual,     # qual entry
+       ) = @_;
+
+    # Returns nothing.
+
+    my ( $f_name, $q_name );
+
+    if ( $fasta->[ 0 ] =~ /^([^ ]+)/ ) {
+        $f_name = $1;
+    }
+
+    if ( $qual->[ 0 ] =~ /^([^ ]+)/ ) {
+        $q_name = $1;
+    }
+
+    Maasha::Common::error( qq(names don't match "$fasta->[ 0 ]" ne "$qual->[ 0 ]") ) if $f_name ne $q_name;
+}
+
+
+sub check_lengths
+{
+    # Martin A. Hansen, April 2011.
+
+    # Check if the lengths of the fasta and qual strings are the same
+    # and raise an error if not.
+
+    my ( $fasta,    # fasta entry
+         $qual,     # qual entry
+       ) = @_;
+
+    # Returns nothing.
+
+    my ( $f_len, $q_len );
+
+    $f_len = length $fasta->[ 1 ];
+    $q_len = length $qual->[ 1 ];
+
+    Maasha::Common::error( qq(lengths don't match "$f_len" != "$q_len") ) if $f_len != $q_len;
+}
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+BEGIN
+{
+    Maasha::Biopieces::status_set();
+}
+
+
+END
+{
+    Maasha::Biopieces::status_log();
+}
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+__END__

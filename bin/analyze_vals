@@ -1,0 +1,129 @@
+#!/usr/bin/env ruby
+
+# Copyright (C) 2007-2013 Martin A. Hansen.
+
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+
+# http://www.gnu.org/copyleft/gpl.html
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# This program is part of the Biopieces framework (www.biopieces.org).
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> DESCRIPTION <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# Determine basic stats for records in the stream.
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+require 'maasha/biopieces'
+
+casts = []
+casts << {long: 'keys',      short: 'k', type: 'list', mandatory: false, default: nil, allowed: nil, disallowed: nil}
+casts << {long: 'no_keys',   short: 'K', type: 'list', mandatory: false, default: nil, allowed: nil, disallowed: nil}
+casts << {long: 'no_stream', short: 'x', type: 'flag', mandatory: false, default: nil, allowed: nil, disallowed: nil}
+casts << {long: 'data_out',  short: 'o', type: 'file', mandatory: false, default: nil, allowed: nil, disallowed: nil}
+
+options = Biopieces.options_parse(ARGV, casts)
+
+stats = Hash.new { |h, k| h[k] = {} }
+
+def to_number(value)
+  begin num = Integer(value)
+    return num
+  rescue
+    begin num = Float(value)
+      return num
+    rescue
+    end
+  end
+end
+
+def min(value1, value2)
+  return value2 unless value1
+  [value1, value2].min
+end
+
+def max(value1, value2)
+  return value2 unless value1
+  [value1, value2].max
+end
+
+keys    = options[:keys].map { |k| k.to_sym }                                  if options[:keys]
+no_keys = options[:no_keys].each_with_object({}) { |i, h| h[i.to_sym] = true } if options[:no_keys]
+get_keys = nil
+
+Biopieces.open(options[:stream_in], options[:stream_out]) do |input, output|
+  input.each do |record|
+    unless get_keys
+      get_keys = keys || record.keys
+      get_keys.reject! { |k| no_keys[k] } if no_keys
+    end
+
+    get_keys.each do |key|
+      key = key.to_sym
+      value = record[key]
+
+      if value
+        stats[key][:sum]   ||= 0
+        stats[key][:count] ||= 0
+
+        if num = to_number(value)
+          stats[key][:min]   = min(stats[key][:min], num)
+          stats[key][:max]   = max(stats[key][:max], num)
+          stats[key][:type]  = :numeric
+          stats[key][:sum]  += num
+        else
+          stats[key][:min]   = min(stats[key][:min], value.length)
+          stats[key][:max]   = max(stats[key][:max], value.length)
+          stats[key][:type]  = :alphabetic
+          stats[key][:sum]  += value.length
+        end
+
+        stats[key][:count] += 1
+      end
+    end
+
+    output.puts record unless options[:no_stream]
+  end
+
+  if options[:data_out]
+    data_out = File.open(options[:data_out], 'w')
+  end
+
+  stats.each do |key, value|
+    stat_record = {
+      :KEY   => key,
+      :TYPE  => value[:type].to_s.capitalize,
+      :COUNT => value[:count],
+      :MIN   => value[:min].is_a?(Float) ? "%0.2f" % value[:min] : value[:min],
+      :MAX   => value[:max].is_a?(Float) ? "%0.2f" % value[:max] : value[:max],
+      :SUM   => value[:sum].is_a?(Float) ? "%0.2f" % value[:sum] : value[:sum],
+      :MEAN  => "%0.2f" % (value[:sum] / value[:count].to_f)
+    }
+
+    if options[:data_out]
+      data_out.puts stat_record
+    else
+      output.puts stat_record
+    end
+  end
+end
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+__END__

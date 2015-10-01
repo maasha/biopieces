@@ -1,0 +1,137 @@
+#!/usr/bin/env perl
+
+# Copyright (C) 2007-2009 Martin A. Hansen.
+
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+
+# http://www.gnu.org/copyleft/gpl.html
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> DESCRIPTION <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# Determines the distance between mapped mate pair sequence matches.
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+use warnings;
+use strict;
+use Data::Dumper;
+use Maasha::Biopieces;
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+my ( $options, $in, $out, $record, %data, $q_id, $mate, $contig, $strand, @mates1, @mates2, $mate1, $mate2, $new_record );
+
+$options = Maasha::Biopieces::parse_options();
+
+$in  = Maasha::Biopieces::read_stream( $options->{ "stream_in" } );
+$out = Maasha::Biopieces::write_stream( $options->{ "stream_out" } );
+
+while ( $record = Maasha::Biopieces::get_record( $in ) ) 
+{
+    if ( exists $record->{ 'S_ID' }   and
+         exists $record->{ 'Q_ID' }   and 
+         exists $record->{ 'STRAND' } and 
+         exists $record->{ 'S_BEG' }
+    )
+    {
+        ( $q_id, $mate ) = split "/", $record->{ 'Q_ID' }, 2;
+
+        if ( $mate )
+        {
+            if ( $mate == 2 )
+            {
+                if ( $record->{ 'STRAND' } eq '+' ) {
+                    $record->{ 'STRAND' } = '-';
+                } else {
+                    $record->{ 'STRAND' } = '+';
+                }
+            }
+
+            push @{ $data{ $record->{ 'S_ID' } }{ $record->{ 'STRAND' } }{ $q_id }{ $mate } }, $record; 
+        }
+    }
+
+    Maasha::Biopieces::put_record( $record, $out );
+}
+
+# print Dumper( \%data );   # DEBUG
+
+foreach $contig ( keys %data )
+{
+    foreach $strand ( keys %{ $data{ $contig } } )
+    {
+        foreach $q_id ( keys %{ $data{ $contig }{ $strand } } )
+        {
+            next if not exists $data{ $contig }{ $strand }{ $q_id }{ 1 };
+            next if not exists $data{ $contig }{ $strand }{ $q_id }{ 2 };
+
+            @mates1 = @{ $data{ $contig }{ $strand }{ $q_id }{ 1 } };
+            @mates2 = @{ $data{ $contig }{ $strand }{ $q_id }{ 2 } };
+
+            @mates1 = sort { $a->{ 'S_BEG' } <=> $b->{ 'S_BEG' } } @mates1;
+            @mates2 = sort { $a->{ 'S_BEG' } <=> $b->{ 'S_BEG' } } @mates2;
+
+            foreach $mate1 ( @mates1 )
+            {
+                foreach $mate2 ( @mates2 )
+                {
+                    $new_record = {
+                        S_ID     => $contig,
+                        Q_ID1    => $mate1->{ 'Q_ID' },
+                        Q_ID2    => $mate2->{ 'Q_ID' },
+                        S_BEG1   => $mate1->{ 'S_BEG' },
+                        S_BEG2   => $mate2->{ 'S_BEG' },
+                        S_END1   => $mate1->{ 'S_END' },
+                        S_END2   => $mate2->{ 'S_END' },
+                        SEQ_LEN1 => $mate1->{ 'SEQ_LEN' },
+                        SEQ_LEN2 => $mate2->{ 'SEQ_LEN' },
+                        STRAND   => $mate1->{ 'STRAND' },
+                        DIST   => abs( $mate2->{ 'S_BEG' } - $mate1->{ 'S_BEG' } ),
+                    };
+
+                    Maasha::Biopieces::put_record( $new_record, $out );
+                }
+            }
+        }
+    }
+}
+
+Maasha::Biopieces::close_stream( $in );
+Maasha::Biopieces::close_stream( $out );
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+BEGIN
+{
+    Maasha::Biopieces::status_set();
+}
+
+
+END
+{
+    Maasha::Biopieces::status_log();
+}
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+__END__

@@ -1,0 +1,123 @@
+#!/usr/bin/env perl
+
+# Copyright (C) 2007-2009 Martin A. Hansen.
+
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+
+# http://www.gnu.org/copyleft/gpl.html
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> DESCRIPTION <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# Intersects two tracks in the Biopieces Genome Browser.
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+use warnings;
+use strict;
+use Data::Dumper;
+use Maasha::Biopieces;
+use Maasha::BGB::Track;
+use Maasha::KISS;
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+my ( $user, $options, $in, $out, $record, @contigs, $contig, $track, @tracks, %hash, $fh1, $fh2, $entries, $entry );
+
+$user    = Maasha::Biopieces::biopiecesrc( "BGB_USER" );
+
+$options = Maasha::Biopieces::parse_options(
+    [
+        { long => 'user',     short => 'u', type => 'string', mandatory => 'no',  default => $user, allowed => undef, disallowed => undef },
+        { long => 'clade',    short => 'c', type => 'string', mandatory => 'yes', default => undef, allowed => undef, disallowed => undef },
+        { long => 'genome',   short => 'g', type => 'string', mandatory => 'yes', default => undef, allowed => undef, disallowed => undef },
+        { long => 'assembly', short => 'a', type => 'string', mandatory => 'yes', default => undef, allowed => undef, disallowed => undef },
+        { long => 'track1',   short => 't', type => 'string', mandatory => 'yes', default => undef, allowed => undef, disallowed => undef },
+        { long => 'track2',   short => 'T', type => 'string', mandatory => 'yes', default => undef, allowed => undef, disallowed => undef },
+        { long => 'invert',   short => 'i', type => 'flag',   mandatory => 'no',  default => undef, allowed => undef, disallowed => undef },
+    ]   
+);
+
+$in  = Maasha::Biopieces::read_stream( $options->{ "stream_in" } );
+$out = Maasha::Biopieces::write_stream( $options->{ "stream_out" } );
+
+while ( $record = Maasha::Biopieces::get_record( $in ) )
+{
+    Maasha::Biopieces::put_record( $record, $out );
+}
+
+Maasha::Common::error( qq(Bad user: "$options->{ 'user' }") ) if not grep /^$options->{ 'user' }$/, Maasha::BGB::Track::list_users();
+
+@contigs = Maasha::BGB::Track::list_contigs( $options->{ 'user' }, $options->{ 'clade' }, $options->{ 'genome' }, $options->{ 'assembly' } );
+
+foreach $contig ( @contigs )
+{
+    undef %hash;
+
+    @tracks = Maasha::BGB::Track::list_track_dir( $options->{ 'user' }, $options->{ 'clade' }, $options->{ 'genome' }, $options->{ 'assembly' }, $contig );
+
+    foreach $track ( @tracks )
+    {
+        if ( index( $track, $options->{ 'track1' } ) >= 0 ) {
+            $hash{ '1' } = $track;
+        } elsif ( index( $track, $options->{ 'track2' } ) >= 0 ) {
+            $hash{ '2' } = $track;
+        }
+    }
+
+    if ( exists $hash{ '1' } and exists $hash{ '2' } )
+    {
+        print STDERR "Intersecting:\n$hash{ '1' } and\n$hash{ '2' }\n\n" if $options->{ 'verbose' };
+
+        $fh1 = Maasha::Filesys::file_read_open( "$hash{ '1' }/track_data.kiss" );
+        $fh2 = Maasha::Filesys::file_read_open( "$hash{ '2' }/track_data.kiss" );
+
+        $entries = Maasha::KISS::kiss_intersect( $fh1, $fh2, $options->{ 'invert' } );
+
+        foreach $entry ( @{ $entries } )
+        {
+            if ( $record = Maasha::KISS::kiss2biopiece( $entry ) ) {
+                 Maasha::Biopieces::put_record( $record, $out );
+            }
+        }
+    }
+}
+
+Maasha::Biopieces::close_stream( $in );
+Maasha::Biopieces::close_stream( $out );
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+BEGIN
+{
+    Maasha::Biopieces::status_set();
+}
+
+
+END
+{
+    Maasha::Biopieces::status_log();
+}
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+__END__

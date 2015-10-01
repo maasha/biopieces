@@ -1,0 +1,68 @@
+#!/usr/bin/env ruby
+
+# Copyright (C) 2007-2010 Martin A. Hansen.
+
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+
+# http://www.gnu.org/copyleft/gpl.html
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# This program is part of the Biopieces framework (www.biopieces.org).
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> DESCRIPTION <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# Split sequences in the stream at a given restriction enzyme's cleavage points.
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+require 'maasha/biopieces'
+require 'maasha/seq'
+
+casts = []
+casts << {:long=>'pattern', :short=>'p', :type=>'string', :mandatory=>true, :default=>nil, :allowed=>nil, :disallowed=>nil}
+casts << {:long=>'cut_pos', :short=>'c', :type=>'int',    :mandatory=>true, :default=>nil, :allowed=>nil, :disallowed=>nil}
+
+options = Biopieces.options_parse(ARGV, casts)
+
+Biopieces.open(options[:stream_in], options[:stream_out]) do |input, output|
+  input.each_record do |record|
+    if record[:SEQ_NAME] and record[:SEQ]
+      seq = Seq.new_bp(record)
+
+      seq.each_digest(options[:pattern].to_s, options[:cut_pos]) do |digest|
+        new_record = digest.to_bp
+
+        if new_record[:SEQ_NAME] =~ /\[(\d+)-(\d+)\]$/
+          s_beg = $1
+          s_end = $2
+        end
+
+        new_record[:S_BEG]    = s_beg 
+        new_record[:S_END]    = s_end
+        new_record[:REC_TYPE] = "DIGEST"
+
+        output.puts new_record
+      end
+    else
+      output.puts record
+    end
+  end
+end
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+__END__

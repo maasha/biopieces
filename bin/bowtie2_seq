@@ -1,0 +1,115 @@
+#!/usr/bin/env ruby
+
+# Copyright (C) 2007-2013 Martin A. Hansen.
+
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+
+# http://www.gnu.org/copyleft/gpl.html
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# This program is part of the Biopieces framework (www.biopieces.org).
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> DESCRIPTION <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# Run bowtie2 to map sequences in the stream.
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+require 'maasha/biopieces'
+require 'maasha/fasta'
+require 'maasha/sam'
+
+casts = []
+casts << {:long=>'index_name', :short=>'i', :type=>'string', :mandatory=>true,  :default=>nil,      :allowed=>nil,             :disallowed=>nil}
+casts << {:long=>'type',       :short=>'t', :type=>'string', :mandatory=>false, :default=>"single", :allowed=>"single,paired", :disallowed=>nil}
+casts << {:long=>'cpus',       :short=>'c', :type=>'uint',   :mandatory=>false, :default=>1,        :allowed=>nil,             :disallowed=>"0"}
+
+options = Biopieces.options_parse(ARGV, casts)
+
+tmp_dir  = Biopieces.mktmpdir
+in_file  = File.join(tmp_dir, "in.fna")
+in1_file = File.join(tmp_dir, "in1.fna")
+in2_file = File.join(tmp_dir, "in2.fna")
+out_file = File.join(tmp_dir, "out.sam")
+
+Biopieces.open(options[:stream_in], options[:stream_out]) do |input, output|
+  if options[:type] == "single"
+    Fasta.open(in_file, 'w') do |fasta_io|
+      input.each_record do |record|
+        output.puts record
+
+        if record[:SEQ_NAME] and record[:SEQ]
+          fasta_io.puts Seq.new_bp(record).to_fasta
+        end
+      end
+    end
+  else
+    Fasta.open(in1_file, 'w') do |fasta1_io|
+      Fasta.open(in2_file, 'w') do |fasta2_io|
+        input.each_record do |record|
+          output.puts record
+
+          if record[:SEQ_NAME] and record[:SEQ]
+            case record[:SEQ_NAME]
+            when /\/1$/ then fasta1_io.puts Seq.new_bp(record).to_fasta
+            when / 1:/  then fasta1_io.puts Seq.new_bp(record).to_fasta
+            when /\/2$/ then fasta2_io.puts Seq.new_bp(record).to_fasta
+            when / 2:/  then fasta2_io.puts Seq.new_bp(record).to_fasta
+            else
+              raise "Error: could not identify paired read in: #{record[:SEQ_NAME]}"
+            end
+          end
+        end
+      end
+    end
+  end
+
+  cmd = []
+  cmd << "bowtie2"
+  cmd << "-f"
+  cmd << "--quiet" unless options[:verbose]
+  cmd << "--threads #{options[:cpus]}"
+  cmd << "-x #{options[:index_name]}"
+
+  if options[:type] == "single"
+    cmd << "-U #{in_file}"
+  else
+    cmd << "-1 #{in1_file}"
+    cmd << "-2 #{in2_file}"
+  end
+
+  cmd << "-S #{out_file}"
+
+  c = cmd.join(" ")
+
+  $stderr.puts c if options[:verbose]
+
+  system(c)
+
+  raise "Error: executing #{c}" unless $?.success?
+
+  Sam.open(out_file, 'r') do |sam_io|
+    sam_io.each do |entry|
+      output.puts Sam.to_bp(entry)
+    end
+  end
+end
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+__END__

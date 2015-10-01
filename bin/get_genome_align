@@ -1,0 +1,181 @@
+#!/usr/bin/env perl
+
+# Copyright (C) 2007-2009 Martin A. Hansen.
+
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+
+# http://www.gnu.org/copyleft/gpl.html
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> DESCRIPTION <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# Extract alignments from a multiple genome alignment.
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+use warnings;
+use strict;
+use Maasha::Biopieces;
+use Maasha::Common;
+use Maasha::UCSC;
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+my ( $options, $in, $out, $record, $tmp_dir, $maf_track, $align, $align_num, $beg, $end, $len, $entry );
+
+$options = Maasha::Biopieces::parse_options(
+    [
+        { long => 'genome', short => 'g', type => 'genome', mandatory => 'yes', default => undef, allowed => undef, disallowed => undef },
+        { long => 'chr',    short => 'c', type => 'string', mandatory => 'no',  default => undef, allowed => undef, disallowed => undef },
+        { long => 'beg',    short => 'b', type => 'uint',   mandatory => 'no',  default => undef, allowed => undef, disallowed => 0     },
+        { long => 'end',    short => 'e', type => 'uint',   mandatory => 'no',  default => undef, allowed => undef, disallowed => 0     },
+        { long => 'len',    short => 'l', type => 'uint',   mandatory => 'no',  default => undef, allowed => undef, disallowed => 0     },
+        { long => 'strand', short => 's', type => 'string', mandatory => 'no',  default => '+',   allowed => '+,-', disallowed => undef },
+    ]   
+);
+
+$in  = Maasha::Biopieces::read_stream( $options->{ "stream_in" } );
+$out = Maasha::Biopieces::write_stream( $options->{ "stream_out" } );
+
+$tmp_dir = Maasha::Biopieces::get_tmpdir();
+
+$align_num = 1;
+
+$maf_track = maf_track( $options->{ "genome" } );
+
+if ( $options->{ "chr" } and $options->{ "beg" } and ( $options->{ "end" } or $options->{ "len" } ) )
+{
+    $beg = $options->{ "beg" } - 1;
+    
+    if ( $options->{ "end" } ) {
+        $end = $options->{ "end" };
+    } elsif ( $options->{ "len" } ) {
+        $end = $beg + $options->{ "len" };
+    }
+
+    $align = Maasha::UCSC::maf_extract( $tmp_dir, $options->{ "genome" }, $maf_track, $options->{ "chr" }, $beg, $end, $options->{ "strand" } );
+
+    foreach $entry ( @{ $align } )
+    {
+        $entry->{ "CHR" }     = $record->{ "CHR" };
+        $entry->{ "CHR_BEG" } = $record->{ "CHR_BEG" };
+        $entry->{ "CHR_END" } = $record->{ "CHR_END" };
+        $entry->{ "STRAND" }  = $record->{ "STRAND" } || '+';
+        $entry->{ "Q_ID" }    = $record->{ "Q_ID" };
+        $entry->{ "SCORE" }   = $record->{ "SCORE" };
+
+        Maasha::Biopieces::put_record( $entry, $out );
+    }
+}
+
+while ( $record = Maasha::Biopieces::get_record( $in ) ) 
+{
+    if ( $record->{ "REC_TYPE" } eq "BED" )
+    {
+        $align = Maasha::UCSC::maf_extract( $tmp_dir, $options->{ "genome" }, $maf_track, $record->{ "CHR" }, $record->{ "CHR_BEG" }, $record->{ "CHR_END" }, $record->{ "STRAND" } );
+    }
+    elsif ( $record->{ "REC_TYPE" } eq "VMATCH" )
+    {
+        $align = Maasha::UCSC::maf_extract( $tmp_dir, $options->{ "genome" }, $maf_track, $record->{ "S_ID" }, $record->{ "S_BEG" }, $record->{ "S_END" } + 1, $record->{ "STRAND" } );
+    }
+    elsif ( $record->{ "REC_TYPE" } eq "PSL" )
+    {
+        $align = Maasha::UCSC::maf_extract( $tmp_dir, $options->{ "genome" }, $maf_track, $record->{ "S_ID" }, $record->{ "S_BEG" }, $record->{ "S_END" }, $record->{ "STRAND" } );
+    }
+    elsif ( $record->{ "REC_TYPE" } eq "BLAST" )
+    {
+        $align = Maasha::UCSC::maf_extract( $tmp_dir, $options->{ "genome" }, $maf_track, $record->{ "S_ID" }, $record->{ "S_BEG" }, $record->{ "S_END" }, $record->{ "STRAND" } );
+    }
+
+    foreach $entry ( @{ $align } )
+    {
+        $entry->{ "CHR" }     = $record->{ "CHR" };
+        $entry->{ "CHR_BEG" } = $record->{ "CHR_BEG" };
+        $entry->{ "CHR_END" } = $record->{ "CHR_END" };
+        $entry->{ "STRAND" }  = $record->{ "STRAND" };
+        $entry->{ "Q_ID" }    = $record->{ "Q_ID" };
+        $entry->{ "SCORE" }   = $record->{ "SCORE" };
+
+        Maasha::Biopieces::put_record( $entry, $out );
+    }
+
+    $align_num++;
+}
+
+Maasha::Biopieces::close_stream( $in );
+Maasha::Biopieces::close_stream( $out );
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> SUBROUTINES <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+sub maf_track
+{
+    # Martin A. Hansen, April 2008.
+
+    # Given a genome returns the corresponding mafTrack database table name.
+
+    my ( $genome,   # genome to lookup.
+       ) = @_;
+
+    # Returns a string.
+
+    my ( %hash );
+
+    # The below has should be in a config file - fix later.
+
+    %hash = (
+        danRer4 => 'multiz7way',
+        dm2     => 'multiz15way',
+        dm3     => 'multiz15way',
+        fr2     => 'multiz7way',
+        galGal3 => 'multiz7way',
+        gasAcu1 => 'multiz7way',
+        hg18    => 'multiz17way',
+        mm8     => 'multiz17way',
+        mm9     => 'multiz17way',
+        oryLat1 => 'multiz7way',
+        panTro2 => 'multiz17way',
+        tetNig1 => 'multiz7way',
+    );
+
+    Maasha::Common::error( qw(multiz track not found) ) if not exists $hash{ $genome };
+
+    return $hash{ $genome };
+}
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+BEGIN
+{
+    Maasha::Biopieces::status_set();
+}
+
+
+END
+{
+    Maasha::Biopieces::status_log();
+}
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+__END__

@@ -1,0 +1,227 @@
+#!/usr/bin/env perl
+
+# Copyright (C) 2007-2009 Martin A. Hansen.
+
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+
+# http://www.gnu.org/copyleft/gpl.html
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> DESCRIPTION <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# Merge records in the stream based on identifier values to specific keys.
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+use warnings;
+use strict;
+use Maasha::Biopieces;
+use Maasha::Common;
+use Maasha::Filesys;
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+my ( $options, $in, $out, $record, $tmp_dir, $file1, $file2, $fh1, $fh2,
+     $key1, $key2, @keys1, @keys2, @vals1, @vals2, $num1, $num2, $num, $cmp, $i );
+
+$options = Maasha::Biopieces::parse_options(
+    [
+        { long => 'keys',  short => 'k', type => 'list',   mandatory => 'yes', default => undef,   allowed => undef,                         disallowed => undef },
+        { long => 'merge', short => 'm', type => 'string', mandatory => 'no',  default => 'AandB', allowed => 'AandB,AorB,BorA,AnotB,BnotA', disallowed => undef },
+    ]   
+);
+
+$in  = Maasha::Biopieces::read_stream( $options->{ "stream_in" } );
+$out = Maasha::Biopieces::write_stream( $options->{ "stream_out" } );
+
+$tmp_dir = Maasha::Biopieces::get_tmpdir();
+
+$file1 = "$tmp_dir/merge_records1.tmp";
+$file2 = "$tmp_dir/merge_records2.tmp";
+
+$fh1   = Maasha::Filesys::file_write_open( $file1 );
+$fh2   = Maasha::Filesys::file_write_open( $file2 );
+
+$key1  = $options->{ "keys" }->[ 0 ];
+$key2  = $options->{ "keys" }->[ 1 ];
+
+$num   = $key2 =~ s/n$//;
+$num1  = 0;
+$num2  = 0;
+
+while ( $record = Maasha::Biopieces::get_record( $in ) ) 
+{
+    if ( exists $record->{ $key1 } )
+    {
+        @keys1 = $key1;
+        @vals1 = $record->{ $key1 };
+
+        delete $record->{ $key1 };
+
+        map { push @keys1, $_; push @vals1, $record->{ $_ } } keys %{ $record };
+
+        print $fh1 join( "\t", @vals1 ), "\n";
+
+        $num1++;
+    }
+    elsif ( exists $record->{ $key2 } )
+    {
+        @keys2 = $key2;
+        @vals2 = $record->{ $key2 };
+
+        delete $record->{ $key2 };
+
+        map { push @keys2, $_; push @vals2, $record->{ $_ } } keys %{ $record };
+
+        print $fh2 join( "\t", @vals2 ), "\n";
+
+        $num2++;
+    }
+}
+
+close $fh1;
+close $fh2;
+
+if ( $num )
+{
+    Maasha::Common::run( "sort", "-k 1,1n $file1 > $file1.sort" ) and rename "$file1.sort", $file1;
+    Maasha::Common::run( "sort", "-k 1,1n $file2 > $file2.sort" ) and rename "$file2.sort", $file2;
+}
+else
+{
+    Maasha::Common::run( "sort", "-k 1,1 $file1 > $file1.sort" ) and rename "$file1.sort", $file1;
+    Maasha::Common::run( "sort", "-k 1,1 $file2 > $file2.sort" ) and rename "$file2.sort", $file2;
+}
+
+$fh1 = Maasha::Filesys::file_read_open( $file1 );
+$fh2 = Maasha::Filesys::file_read_open( $file2 );
+
+@vals1 = Maasha::Common::get_fields( $fh1 );
+@vals2 = Maasha::Common::get_fields( $fh2 );
+
+while ( $num1 > 0 and $num2 > 0 )
+{
+    undef $record;
+
+    if ( $num ) {
+        $cmp = $vals1[ 0 ] <=> $vals2[ 0 ];
+    } else {
+        $cmp = $vals1[ 0 ] cmp $vals2[ 0 ];
+    }
+
+    if ( $cmp < 0 )
+    {
+        if ( $options->{ 'merge' } =~ /^(AorB|AnotB)$/ )
+        {
+            for ( $i = 0; $i < @keys1; $i++ ) {
+                $record->{ $keys1[ $i ] } = $vals1[ $i ];
+            }
+
+            Maasha::Biopieces::put_record( $record, $out );
+        }
+
+        @vals1 = Maasha::Common::get_fields( $fh1 );
+        $num1--;
+    }
+    elsif ( $cmp > 0 )
+    {
+        if ( $options->{ 'merge' } =~ /^(BorA|BnotA)$/ )
+        {
+            for ( $i = 0; $i < @keys2; $i++ ) {
+                $record->{ $keys2[ $i ] } = $vals2[ $i ];
+            }
+
+            Maasha::Biopieces::put_record( $record, $out );
+        }
+
+        @vals2 = Maasha::Common::get_fields( $fh2 );
+        $num2--;
+    }
+    else
+    {
+        if ( $options->{ 'merge' } =~ /^(AandB|AorB|BorA)$/ )
+        {
+            for ( $i = 0; $i < @keys1; $i++ ) {
+                $record->{ $keys1[ $i ] } = $vals1[ $i ];
+            }
+
+            for ( $i = 1; $i < @keys2; $i++ ) {
+                $record->{ $keys2[ $i ] } = $vals2[ $i ];
+            }
+        
+            Maasha::Biopieces::put_record( $record, $out );
+        }
+
+        @vals1 = Maasha::Common::get_fields( $fh1 );
+        @vals2 = Maasha::Common::get_fields( $fh2 );
+        $num1--;
+        $num2--;
+    }
+}
+
+close $fh1;
+close $fh2;
+
+unlink $file1;
+unlink $file2;
+
+if ( $num1 > 0 and $options->{ 'merge' } =~ /^(AorB|AnotB)$/ )
+{
+    undef $record;
+
+    for ( $i = 0; $i < @keys1; $i++ ) {
+        $record->{ $keys1[ $i ] } = $vals1[ $i ];
+    }
+
+    Maasha::Biopieces::put_record( $record, $out );
+}
+
+if ( $num2 > 0 and $options->{ 'merge' } =~ /^(BorA|BnotA)$/ )
+{
+    undef $record;
+
+    for ( $i = 0; $i < @keys2; $i++ ) {
+        $record->{ $keys2[ $i ] } = $vals2[ $i ];
+    }
+
+    Maasha::Biopieces::put_record( $record, $out );
+}
+
+Maasha::Biopieces::close_stream( $in );
+Maasha::Biopieces::close_stream( $out );
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+BEGIN
+{
+    Maasha::Biopieces::status_set();
+}
+
+
+END
+{
+    Maasha::Biopieces::status_log();
+}
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+__END__

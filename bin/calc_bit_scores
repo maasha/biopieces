@@ -1,0 +1,111 @@
+#!/usr/bin/env perl
+
+# Copyright (C) 2007-2009 Martin A. Hansen.
+
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+
+# http://www.gnu.org/copyleft/gpl.html
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> DESCRIPTION <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# Calculate the bit score for each position based on an alignment in the stream.
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+use warnings;
+use strict;
+use Maasha::Biopieces;
+use Maasha::Seq;
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+my ( $options, $in, $out, $record, $count, $i, $res, $type, $bit_max, %freq_hash, $bit_height, $bit_diff );
+
+$options = Maasha::Biopieces::parse_options();
+
+$in  = Maasha::Biopieces::read_stream( $options->{ "stream_in" } );
+$out = Maasha::Biopieces::write_stream( $options->{ "stream_out" } );
+
+$count = 0;
+
+while ( $record = Maasha::Biopieces::get_record( $in ) ) 
+{
+    if ( $record->{ "SEQ" } )
+    {
+        $type = Maasha::Seq::seq_guess_type( $record->{ "SEQ" } ) if not $type;
+
+        for ( $i = 0; $i < length $record->{ "SEQ" }; $i++ )
+        {
+            $res = substr $record->{ "SEQ" }, $i, 1;
+
+            next if $res =~ /-|_|~|\./;
+
+            $freq_hash{ $i }{ $res }++;
+        }
+
+        $count++;
+    }
+    else
+    {
+        Maasha::Biopieces::put_record( $record, $out );
+    }
+}
+
+undef $record;
+
+if ( $type eq "PROTEIN" ) {
+    $bit_max = 4;
+} else {
+    $bit_max = 2;
+}
+
+for ( $i = 0; $i < keys %freq_hash; $i++ )
+{
+    $bit_height = Maasha::Seq::seqlogo_calc_bit_height( $freq_hash{ $i }, $count );
+
+    $bit_diff = $bit_max - $bit_height;
+
+    $record->{ "V" . ( $i ) } = sprintf( "%.2f", $bit_diff );
+}
+
+Maasha::Biopieces::put_record( $record, $out );
+
+Maasha::Biopieces::close_stream( $in );
+Maasha::Biopieces::close_stream( $out );
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+BEGIN
+{
+    Maasha::Biopieces::status_set();
+}
+
+
+END
+{
+    Maasha::Biopieces::status_log();
+}
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+__END__

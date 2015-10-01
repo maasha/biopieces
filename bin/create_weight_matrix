@@ -1,0 +1,113 @@
+#!/usr/bin/env perl
+
+# Copyright (C) 2007-2009 Martin A. Hansen.
+
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+
+# http://www.gnu.org/copyleft/gpl.html
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> DESCRIPTION <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# Create a residue composition weight matrix of an alignment in the stream.
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+use warnings;
+use strict;
+use Maasha::Common;
+use Maasha::Biopieces;
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+my ( $options, $in, $out, $record, $count, $i, $res, %freq_hash, %res_hash, $freq );
+
+$options = Maasha::Biopieces::parse_options(
+    [
+        { long => 'percent', short => 'p', type => 'flag', mandatory => 'no', default => undef, allowed => undef, disallowed => undef },
+    ]   
+);
+
+$in  = Maasha::Biopieces::read_stream( $options->{ "stream_in" } );
+$out = Maasha::Biopieces::write_stream( $options->{ "stream_out" } );
+
+$count = 0;
+
+while ( $record = Maasha::Biopieces::get_record( $in ) ) 
+{
+    if ( $record->{ "SEQ" } )
+    {
+        for ( $i = 0; $i < length $record->{ "SEQ" }; $i++ )
+        {
+            $res = substr $record->{ "SEQ" }, $i, 1;
+
+            $freq_hash{ $i }{ $res }++;
+            $res_hash{ $res } = 1;
+        }
+
+        $count++;
+    }
+    else
+    {
+        Maasha::Biopieces::put_record( $record, $out );
+    }
+}
+
+foreach $res ( sort keys %res_hash )
+{
+    undef $record;
+
+    $record->{ "V0" } = $res;
+
+    for ( $i = 0; $i < keys %freq_hash; $i++ )
+    {
+        $freq = $freq_hash{ $i }{ $res } || 0;
+
+        if ( $options->{ "percent" } ) {
+            $freq = sprintf( "%.0f", 100 * $freq / $count ) if $freq > 0;
+        }
+
+        $record->{ "V" . ( $i + 1 ) } = $freq;
+    }
+
+    Maasha::Biopieces::put_record( $record, $out );
+}
+
+Maasha::Biopieces::close_stream( $in );
+Maasha::Biopieces::close_stream( $out );
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+BEGIN
+{
+    Maasha::Biopieces::status_set();
+}
+
+
+END
+{
+    Maasha::Biopieces::status_log();
+}
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+__END__

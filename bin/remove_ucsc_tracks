@@ -1,0 +1,142 @@
+#!/usr/bin/env perl
+
+# Copyright (C) 2007-2009 Martin A. Hansen.
+
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+
+# http://www.gnu.org/copyleft/gpl.html
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> DESCRIPTION <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# Remove MySQL database tables.
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+use warnings;
+use strict;
+use Maasha::Biopieces;
+use Maasha::Common;
+use Maasha::SQL;
+use Maasha::UCSC;
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+my ( $options, $in, $out, $record, $conf_file, %track_hash, $fh_in, $fh_out, $track, @tracks, $dbh, @new_tracks );
+
+$conf_file = $ENV{ 'HOME' } . "/ucsc/my_tracks.ra";
+
+$options = Maasha::Biopieces::parse_options(
+    [
+        { long => 'database',    short => 'd', type => 'string', mandatory => 'yes', default => undef,      allowed => undef, disallowed => undef },
+        { long => 'tables',      short => 't', type => 'list',   mandatory => 'no',  default => undef,      allowed => undef, disallowed => undef },
+        { long => 'keys',        short => 'k', type => 'list',   mandatory => 'no',  default => undef,      allowed => undef, disallowed => undef },
+        { long => 'config_file', short => 'c', type => 'file!',  mandatory => 'no',  default => $conf_file, allowed => undef, disallowed => undef },
+        { long => 'user',        short => 'u', type => 'string', mandatory => 'no',  default => undef,      allowed => undef, disallowed => undef },
+        { long => 'password',    short => 'p', type => 'string', mandatory => 'no',  default => undef,      allowed => undef, disallowed => undef },
+    ]   
+);
+
+$in  = Maasha::Biopieces::read_stream( $options->{ "stream_in" } );
+$out = Maasha::Biopieces::write_stream( $options->{ "stream_out" } );
+
+Maasha::Common::error( qq(both --tables and --keys specified) ) if     $options->{ "tables" } and     $options->{ "keys" };
+Maasha::Common::error( qq(no --tables or --keys specified) )    if not $options->{ "tables" } and not $options->{ "keys" };
+
+$options->{ "user" }     ||= Maasha::UCSC::ucsc_get_user();
+$options->{ "password" } ||= Maasha::UCSC::ucsc_get_password();
+
+map { $track_hash{ $_ } = 1 } @{ $options->{ 'tracks' } };
+
+while ( $record = Maasha::Biopieces::get_record( $in ) )
+{
+    map { $track_hash{ $record->{ $_ } } = 1 } @{ $options->{ 'keys' } };
+
+    Maasha::Biopieces::put_record( $record, $out ) if not $options->{ 'no_stream' };
+}
+
+$fh_in = Maasha::Filesys::file_read_open( $options->{ 'config_file' } );
+
+while ( $track = Maasha::UCSC::ucsc_config_entry_get( $fh_in ) ) {
+    push @tracks, $track;
+}
+
+close $fh_in;
+
+foreach $track ( @tracks )
+{
+    if ( $track->{ 'database' } eq $options->{ 'database' } and exists $track_hash{ $track->{ 'track' } } ) {
+        print STDERR qq(Removing track "$track->{ 'track' }" from config file.\n) if $options->{ 'verbose' };
+    } else {
+        push @new_tracks, $track;
+    }
+}
+
+rename "$options->{ 'config_file' }", "$options->{ 'config_file' }~";
+
+$fh_out = Maasha::Filesys::file_write_open( $options->{ 'config_file' } );
+
+map { Maasha::UCSC::ucsc_config_entry_put( $_, $fh_out ) } @new_tracks;
+
+close $fh_out;
+
+# ---- locate track in database ----
+
+$dbh = Maasha::SQL::connect( $options->{ "database" }, $options->{ "user" }, $options->{ "password" } );
+
+foreach $track ( sort keys %track_hash )
+{
+    if ( Maasha::SQL::table_exists( $dbh, $track ) )
+    {
+        print STDERR qq(Removing table "$track" from database "$options->{ 'database' }" ... ) if $options->{ 'verbose' };
+        Maasha::SQL::delete_table( $dbh, $track );
+        print STDERR "done.\n" if $options->{ 'verbose' };
+    }
+    else
+    {
+        print STDERR qq(WARNING: table "$track" not found in database "$options->{ 'database' }\n");
+    }
+}
+
+Maasha::SQL::disconnect( $dbh );
+
+Maasha::Common::run( "ucscMakeTracks.pl", "-b > /dev/null 2>&1" );
+
+Maasha::Biopieces::close_stream( $in );
+Maasha::Biopieces::close_stream( $out );
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+BEGIN
+{
+    Maasha::Biopieces::status_set();
+}
+
+
+END
+{
+    Maasha::Biopieces::status_log();
+}
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+__END__

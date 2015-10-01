@@ -1,0 +1,93 @@
+#!/usr/bin/env ruby
+
+# Copyright (C) 2007-2013 Martin A. Hansen.
+
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+
+# http://www.gnu.org/copyleft/gpl.html
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# This program is part of the Biopieces framework (www.biopieces.org).
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> DESCRIPTION <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# Find homopolymers in sequences in the stream.
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+require 'maasha/biopieces'
+require 'maasha/seq'
+require 'pp'
+
+class Seq; include Homopolymer; end
+
+casts = []
+casts << {:long=>'min',     :short=>'m', :type=>'uint', :mandatory=>false, :default=>1,   :allowed=>nil, :disallowed=>"0"}
+casts << {:long=>'limit',   :short=>'l', :type=>'uint', :mandatory=>false, :default=>nil, :allowed=>nil, :disallowed=>"0"}
+casts << {:long=>'longest', :short=>'L', :type=>'flag', :mandatory=>false, :default=>nil, :allowed=>nil, :disallowed=>nil}
+
+options = Biopieces.options_parse(ARGV, casts)
+
+Biopieces.open(options[:stream_in], options[:stream_out]) do |input, output|
+  input.each_record do |record|
+    if record[:SEQ]
+      seq = Seq.new(seq: record[:SEQ])
+
+      longest = Seq::Homopolymer.new("", 0, 0)
+      got_one = false
+      count   = 0
+
+      seq.each_homopolymer(options[:min]) do |h|
+        got_one = true
+
+        record[:HOMOPOL_PAT] = h.pattern
+        record[:HOMOPOL_LEN] = h.length
+        record[:HOMOPOL_POS] = h.pos
+
+        if options[:longest]
+          longest = h.length > longest.length ? h : longest
+        else
+          output.puts record
+
+          count += 1
+
+          break if options[:limit] and options[:limit] == count
+        end
+      end
+
+      if options[:longest]
+        if longest.length > options[:min]
+          record[:HOMOPOL_PAT] = longest.pattern
+          record[:HOMOPOL_LEN] = longest.length
+          record[:HOMOPOL_POS] = longest.pos
+        end
+
+        output.puts record
+      elsif not got_one
+        output.puts record
+      end
+    else
+      output.puts record
+    end
+  end
+end
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+__END__

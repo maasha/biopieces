@@ -1,0 +1,207 @@
+#!/usr/bin/env perl
+
+# Copyright (C) 2007-2009 Martin A. Hansen.
+
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+
+# http://www.gnu.org/copyleft/gpl.html
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> DESCRIPTION <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# Generate a dotplot of matches in the stream.
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+use warnings;
+use strict;
+use Maasha::Biopieces;
+use Maasha::Plot;
+use Maasha::Filesys;
+use IPC::Open2;
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+my ( $options, $in, $out, $default, $terminals, $record, @data, $fh, $result, %data_hash, $tmp_dir );
+
+$default   = "plot_matches";
+$terminals = "dumb,x11,aqua,post,svg,png";
+
+$options = Maasha::Biopieces::parse_options(
+    [
+        { long => 'no_stream', short => 'x', type => 'flag',   mandatory => 'no',  default => undef,    allowed => undef,                  disallowed => undef },
+        { long => 'data_out',  short => 'o', type => 'file',   mandatory => 'no',  default => undef,    allowed => undef,                  disallowed => undef },
+        { long => 'terminal',  short => 't', type => 'string', mandatory => 'no',  default => 'dumb',   allowed => $terminals,             disallowed => undef },
+        { long => 'direction', short => 'd', type => 'string', mandatory => 'no',  default => 'both',   allowed => 'both,forward,reverse', disallowed => undef },
+        { long => 'title',     short => 'T', type => 'string', mandatory => 'no',  default => $default, allowed => undef,                  disallowed => undef },
+        { long => 'xlabel',    short => 'X', type => 'string', mandatory => 'no',  default => undef,    allowed => undef,                  disallowed => undef },
+        { long => 'ylabel',    short => 'Y', type => 'string', mandatory => 'no',  default => undef,    allowed => undef,                  disallowed => undef },
+    ]   
+);
+
+$in  = Maasha::Biopieces::read_stream( $options->{ "stream_in" } );
+$out = Maasha::Biopieces::write_stream( $options->{ "stream_out" } );
+
+while ( $record = Maasha::Biopieces::get_record( $in ) ) 
+{
+    if ( defined $record->{ "Q_BEG" } and defined $record->{ "S_BEG" } and $record->{ "Q_END" } and $record->{ "S_END" } ) {
+        push @data, $record;
+    }
+
+    Maasha::Biopieces::put_record( $record, $out ) if not $options->{ "no_stream" };
+}
+
+$options->{ "xlabel" } ||= $data[ 0 ]->{ "Q_ID" };
+$options->{ "ylabel" } ||= $data[ 0 ]->{ "S_ID" };
+
+$tmp_dir = Maasha::Biopieces::get_tmpdir();
+
+$result = dotplot_matches( \@data, $options, $tmp_dir );
+
+$fh = Maasha::Biopieces::write_stream( $options->{ "data_out" } );
+
+print $fh "$_\n" foreach @{ $result };
+
+close $fh;
+
+Maasha::Biopieces::close_stream( $in );
+Maasha::Biopieces::close_stream( $out );
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> SUBROUTINES <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+sub dotplot_matches
+{
+    # Martin A. Hansen, August 2007.
+
+    # Generates a dotplot from a list of matches using Gnuplot.
+
+    my ( $matches,   # list of hashrefs.
+         $options,   # options hash
+         $tmp_dir,   # temporary directory
+       ) = @_;
+
+    # Returns list.
+
+    my ( $forward_file, $backward_file, $pid, $fh_forward, $fh_backward,
+         $fh_in, $fh_out, $cmd, $match, $line, @lines, $q_max, $s_max );
+
+    $forward_file  = "$tmp_dir/match_f.tab";
+    $backward_file = "$tmp_dir/match_r.tab";
+
+    $fh_forward  = Maasha::Filesys::file_write_open( $forward_file );
+    $fh_backward = Maasha::Filesys::file_write_open( $backward_file );
+
+    $q_max = 0;
+    $s_max = 0;
+
+    foreach $match ( @{ $matches } )
+    {
+        if ( ($match->{ "DIR" } and $match->{ "DIR" } =~ /^f/) or ($match->{ "STRAND" } and $match->{ "STRAND" } eq '+') )
+        {
+            print $fh_forward join( "\t", $match->{ "Q_BEG" } + 1, $match->{ "S_BEG" } + 1 ), "\n";
+            print $fh_forward join( "\t", $match->{ "Q_END" } + 1, $match->{ "S_END" } + 1 ), "\n";
+            print $fh_forward "\n\n";
+        }
+        else
+        {
+            print $fh_backward join( "\t", $match->{ "Q_BEG" } + 1, $match->{ "S_END" } + 1 ), "\n";
+            print $fh_backward join( "\t", $match->{ "Q_END" } + 1, $match->{ "S_BEG" } + 1 ), "\n";
+            print $fh_backward "\n\n";
+        }
+
+        $q_max = $match->{ "Q_END" } if $match->{ "Q_END" } > $q_max;
+        $s_max = $match->{ "S_END" } if $match->{ "S_END" } > $s_max;
+    }
+
+    $q_max++;
+    $s_max++;
+
+    close $fh_forward;
+    close $fh_backward;
+
+    $cmd  = "gnuplot -persist";
+
+    $pid = open2( $fh_out, $fh_in, $cmd );
+    
+    print $fh_in "set terminal $options->{ 'terminal' }\n";
+    print $fh_in "set xrange [1:$q_max]\n";
+    print $fh_in "set yrange [1:$s_max]\n";
+    print $fh_in "set title \"$options->{ 'title' }\"\n"   if $options->{ "title" };
+    print $fh_in "set xlabel \"$options->{ 'xlabel' }\"\n" if $options->{ "xlabel" };
+    print $fh_in "set ylabel \"$options->{ 'ylabel' }\"\n" if $options->{ "ylabel" };
+    print $fh_in "unset key\n";
+
+    if ( $options->{ "terminal" } ne "dumb" )
+    {
+        print $fh_in "set style line 1 linetype 1 linecolor rgb \"green\" linewidth 2 pointtype 6 pointsize default\n";
+        print $fh_in "set style line 2 linetype 1 linecolor rgb \"red\" linewidth 2 pointtype 6 pointsize default\n";
+    }
+
+    print $fh_in "set xtics border out\n";
+    print $fh_in "set ytics border out\n";
+    print $fh_in "set grid\n";
+
+    if ( $options->{ "direction" } =~ /^b/ ) {
+        print $fh_in qq(plot "$forward_file" with lines ls 1, "$backward_file" with lines ls 2\n);
+    } elsif ( $options->{ "direction" } =~ /^f/ ) {
+        print $fh_in qq(plot "$forward_file" with lines ls 1\n);
+    } elsif ( $options->{ "direction" } =~ /^r/ ) {
+        print $fh_in qq(plot "$backward_file" with lines ls 2\n);
+    }
+
+    close $fh_in;
+
+    while ( $line = <$fh_out> )
+    {
+        chomp $line;
+
+        push @lines, $line;
+    }
+
+    close $fh_out;
+
+    waitpid $pid, 0;
+
+    unlink $forward_file;
+    unlink $backward_file;
+
+    return wantarray ? @lines : \@lines;
+}
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+BEGIN
+{
+    Maasha::Biopieces::status_set();
+}
+
+
+END
+{
+    Maasha::Biopieces::status_log();
+}
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+__END__

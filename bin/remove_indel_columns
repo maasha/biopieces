@@ -1,0 +1,77 @@
+#!/usr/bin/env ruby
+
+# Copyright (C) 2007-2011 Martin A. Hansen.
+
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+
+# http://www.gnu.org/copyleft/gpl.html
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# This program is part of the Biopieces framework (www.biopieces.org).
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> DESCRIPTION <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# Remove columns with indels only from aligned sequences in the stream.
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+require 'maasha/biopieces'
+require 'narray'
+require 'pp'
+
+options      = Biopieces.options_parse(ARGV)
+tmpdir       = Biopieces.mktmpdir
+file_records = File.join(tmpdir, "data.stream")
+na_mask      = false
+count        = 0
+
+Biopieces.open(options[:stream_in], file_records) do |input, output|
+  input.each do |record|
+    if record[:SEQ]
+      na_mask = NArray.int(record[:SEQ].length) unless na_mask
+      na_seq  = NArray.to_na(record[:SEQ], "byte")
+      na_mask += na_seq.eq('-'.ord) 
+      na_mask += na_seq.eq('.'.ord) 
+      na_mask += na_seq.eq('_'.ord) 
+      na_mask += na_seq.eq('~'.ord) 
+
+      count += 1
+    end
+
+    output.puts record
+  end
+end
+
+na_mask = na_mask.ne count
+
+sum = na_mask.sum
+
+Biopieces.open(file_records, options[:stream_out]) do |input, output|
+  input.each do |record|
+    if sum > 0 and record[:SEQ]
+      na_seq           = NArray.to_na(record[:SEQ], "byte")
+      record[:SEQ]     = na_seq[na_mask].to_s
+      record[:SEQ_LEN] = record[:SEQ].length
+    end
+
+    output.puts record
+  end
+end
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+__END__

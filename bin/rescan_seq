@@ -1,0 +1,108 @@
+#!/usr/bin/env perl
+
+# Copyright (C) 2007-2009 Martin A. Hansen.
+
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+
+# http://www.gnu.org/copyleft/gpl.html
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> DESCRIPTION <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# Scan sequences in the stream for restriction enzyme cleavage sites.
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+use warnings;
+use strict;
+use Data::Dumper;
+use Maasha::RestrictEnz;
+use Maasha::Biopieces;
+use Maasha::Patscan;
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+my ( $options, $in, $out, $record, $re_data, $re, $matches, $match, %re_hash, $res_enz, $new_record );
+
+$options = Maasha::Biopieces::parse_options(
+    [
+        { long => 'res_enz',      short => 'r', type => 'list',  mandatory => 'no', default => undef, allowed => undef, disallowed => undef },
+        { long => 'res_enz_in',   short => 'R', type => 'file!', mandatory => 'no', default => undef, allowed => undef, disallowed => undef },
+        { long => 'res_enz_only', short => 'o', type => 'flag',  mandatory => 'no', default => undef, allowed => undef, disallowed => undef },
+        { long => 'no_matches',   short => 'M', type => 'flag',  mandatory => 'no', default => undef, allowed => undef, disallowed => undef },
+    ]   
+);
+
+$in  = Maasha::Biopieces::read_stream( $options->{ "stream_in" } );
+$out = Maasha::Biopieces::write_stream( $options->{ "stream_out" } );
+
+$re_data = Maasha::RestrictEnz::parse_re_data();
+
+if ( $options->{ 'res_enz_in' } ) {
+    $res_enz = Maasha::Patscan::read_patterns( $options->{ "res_enz_in" } );
+}
+
+push @{ $res_enz }, @{ $options->{ 'res_enz' } } if defined $options->{ 'res_enz' };
+
+map { $re_hash{ $_ } = 1 } @{ $res_enz };
+
+while ( $record = Maasha::Biopieces::get_record( $in ) ) 
+{
+    if ( $record->{ 'SEQ' } )
+    {
+        foreach $re ( @{ $re_data } )
+        {
+            next if not exists $re_hash{ $re->{ 'name' } };
+
+            $matches = Maasha::RestrictEnz::re_scan( $record->{ 'SEQ' }, $re );
+
+            %{ $new_record }              = %{ $record } if not $options->{ 'res_enz_only' };
+            $new_record->{ 'RE' }         = $re->{ 'name' };
+            $new_record->{ 'RE_COUNT' }   = scalar @{ $matches };
+            $new_record->{ 'RE_MATCHES' } = join( ";", @{ $matches } ) if not $options->{ 'no_matches' };
+
+            Maasha::Biopieces::put_record( $new_record, $out );
+        }
+    }
+
+    # Maasha::Biopieces::put_record( $record, $out );
+}
+
+Maasha::Biopieces::close_stream( $in );
+Maasha::Biopieces::close_stream( $out );
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+BEGIN
+{
+    Maasha::Biopieces::status_set();
+}
+
+
+END
+{
+    Maasha::Biopieces::status_log();
+}
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+__END__

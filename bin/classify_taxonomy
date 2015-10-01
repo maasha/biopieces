@@ -1,0 +1,214 @@
+#!/usr/bin/env ruby
+
+# Copyright (C) 2007-2012 Martin A. Hansen.
+
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+
+# http://www.gnu.org/copyleft/gpl.html
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# This program is part of the Biopieces framework (www.biopieces.org).
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> DESCRIPTION <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# Classify records with taxonomy information.
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+require 'pp'
+require 'maasha/biopieces'
+
+# Class containing methods to construct a taxonomic tree recursively
+# for the classification of organisms. Currently only works with GreenGenes type of entries
+class TaxNode
+  attr_accessor :level, :name, :count, :score, :children
+
+  # Method to initalize a TaxNode object.
+  def initialize(level, name, count, score)
+    @level    = level   # Taxonomic level e.g. phylum, class, etc
+    @name     = name    # Name of organism
+    @count    = count   # Number of times this organism was encountered
+    @score    = score   # Similarity score
+    @children = {}
+  end
+
+  # Method to add to the taxonomic tree a GreenGenes entry.
+  def add_gg(s_id, score, size)
+    node = self
+
+    s_id.scan(/([\w])__([^;]+)/) do
+      level = expand_level($1)
+      name  = $2
+
+      if node.children[name].nil?
+        node.children[name] = TaxNode.new(level, name, size * 1, size * score)
+      else
+        node.children[name].count += size * 1
+        node.children[name].score += size * score
+      end
+
+      node = node.children[name]
+    end
+  end
+
+  # Method to merge two TaxNodes.
+  def merge(node_new, node_old = self)
+    node_new.children.each do |name, child|
+      if node_old.children[name]
+        node_old.children[name].count += child.count
+        node_old.children[name].score += child.score
+
+        merge(child, node_old.children[name])
+      else
+        node_old.children[name] = child
+      end
+    end
+  end
+
+  # Method to flatten a taxonomic tree turning this into a list by recursive depth first traversal.
+  def flatten(node = self, list = [])
+    list << TaxNode.new(node.level, node.name, node.count, node.score)
+
+    node.children.each_value do |child|
+      flatten(child, list)
+    end
+
+    list
+  end
+
+  # Method to recursively remove branches in taxonomic tree where the child count is less than or
+  # equal to a given minimum.
+  def debranch(min_count = nil)
+    node = self
+
+    node.children.each do |name, child|
+      node.children.delete(name) if child.count <= min_count
+    end
+
+    node.children.each_value do |child|
+      child.debranch(min_count)
+    end
+  end
+
+  # Method to recursively trim a taxonomic tree so that it only contains an unbranched tree,
+  # which gives the lowest common ancestor.
+  def lowest_common_ancestor
+    node = self
+
+    node.children = {} if node.children.size > 1
+
+    node.children.each_value do |child|
+      child.lowest_common_ancestor
+    end
+  end
+
+  # Method for iterating over a taxonomic tree.
+  def each
+    self.flatten.each do |node|
+      yield node
+    end
+
+    self
+  end
+
+  # Method to convert a TaxNode to a Biopiece record.
+  def to_bp
+    record = {}
+    record[:REC_TYPE] = "Classification"
+    record[:LEVEL]    = @level
+    record[:NAME]     = @name
+    record[:COUNT]    = @count
+    record[:SCORE]    = @count == 0 ? 0.0 : (@score / @count).round(2)
+
+    record
+  end
+
+  private
+
+  # Method containing a helper hash to expand the phylogenetic level name.
+  def expand_level(level)
+    hash = {
+      'd' => "domain",
+      'k' => "kingdom",
+      'p' => "phylum",
+      'c' => "class",
+      'o' => "order",
+      'f' => "family",
+      'g' => "genus",
+      's' => "species"
+    }
+
+    raise "unknown level: #{level}" unless hash[level]
+
+    hash[level]
+  end
+end
+
+casts = []
+casts << {:long=>'LCA',       :short=>'l', :type=>'flag', :mandatory=>false, :default=>nil, :allowed=>nil, :disallowed=>nil}
+casts << {:long=>'size',      :short=>'s', :type=>'flag', :mandatory=>false, :default=>nil, :allowed=>nil, :disallowed=>nil}
+casts << {:long=>'min_count', :short=>'m', :type=>'uint', :mandatory=>false, :default=>nil, :allowed=>nil, :disallowed=>nil}
+
+options = Biopieces.options_parse(ARGV, casts)
+
+tax_tree = TaxNode.new("root", "Root", 0, 0.0)
+tax_hash = {}
+
+Biopieces.open(options[:stream_in], options[:stream_out]) do |input, output|
+  input.each_record do |record|
+    if record[:Q_ID] and record[:S_ID] and record[:SCORE]
+      size = 1
+
+      if options[:size]
+        if record[:Q_ID].match(/_(\d+)$/)
+          size = $1.to_i
+#        else
+#          raise BiopiecesError, "Could not extract size from Q_ID: #{record[:Q_ID]}"
+        end
+      end
+
+      if options[:LCA]
+        tax_hash[record[:Q_ID]] = TaxNode.new("root", "Root", 0, 0.0) unless tax_hash[record[:Q_ID]]
+        tax_hash[record[:Q_ID]].add_gg(record[:S_ID], record[:SCORE].to_f, size)
+      else
+        tax_tree.add_gg(record[:S_ID], record[:SCORE].to_f, size)
+      end
+    else
+      output.puts record
+    end
+  end
+
+  if options[:LCA]
+    tax_hash.each_value do |tree|
+      tree.debranch(options[:min_count]) if options[:min_count]
+      tree.lowest_common_ancestor
+    end
+
+    tax_hash.each_value do |tree|
+      tax_tree.merge(tree)
+    end
+  end
+
+  tax_tree.each do |node|
+    output.puts node.to_bp unless node.level == 'root'
+  end
+end
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+__END__

@@ -1,0 +1,209 @@
+#!/usr/bin/env perl
+
+# Copyright (C) 2007-2009 Martin A. Hansen.
+
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+
+# http://www.gnu.org/copyleft/gpl.html
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> DESCRIPTION <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# Monitor status running Biopieces.
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+use warnings;
+use strict;
+use Maasha::Biopieces;
+use Maasha::Common;
+use Maasha::Filesys;
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+my ( $options, $allowed, @files, $file, $user, $pid, $script, $info, $time0, $time1, $args, $du, @table );
+
+$allowed = "USER,PID,%CPU,%MEM,TMP_DIR,START_TIME,RUN_TIME,COMMAND";
+
+$options = Maasha::Biopieces::parse_options(
+    [
+        { long => 'time', short => 't', type => 'uint',   mandatory => 'no', default => 5,      allowed => undef,    disallowed => 0 },
+        { long => 'sort', short => 's', type => 'string', mandatory => 'no', default => '%CPU', allowed => $allowed, disallowed => undef },
+        { long => 'user', short => 'u', type => 'string', mandatory => 'no', default => undef,  allowed => undef,    disallowed => undef },
+    ]   
+);
+
+while ( 1 )
+{
+    system( "clear" );
+
+    undef @table;
+
+    @files = Maasha::Filesys::ls_files( $ENV{ 'BP_TMP' } );
+    @files = grep /\.status$/, @files;
+
+    if ( $options->{ 'user' } ) {
+        @files = grep /$options->{ 'user' }/, @files;
+    }
+
+    foreach $file ( @files )
+    {
+        ( $user, $script, $pid ) = split /\./, $file;
+        
+        if ( $info = process_info_mac( $pid ) )
+        {
+            ( $time0, $args, $du ) = get_status_info( $file );
+
+            $info->{ 'START_TIME' } = $time0;
+            $info->{ 'RUN_TIME' }   = Maasha::Common::time_stamp_diff( $time0, Maasha::Common::time_stamp() );
+            $info->{ 'TMP_DIR' }    = $du || "N/A";
+            $info->{ 'COMMAND' }    = "$script $args";
+
+            push @table, $info;
+        }
+    }
+
+    if ( $options->{ 'sort' } =~ /^(USER|TMP_DIR|START_TIME|RUN_TIME|COMMAND)$/ ) {
+        @table = sort { $a->{ $options->{ 'sort' } } cmp $b->{ $options->{ 'sort' } } } @table;
+    } else {
+        @table = sort { $a->{ $options->{ 'sort' } } <=> $b->{ $options->{ 'sort' } } } @table;
+    }
+    
+    print join( "\t", 'USER', 'PID', '%CPU', '%MEM', 'TMP_DIR', 'START_TIME           ', 'RUN_TIME', 'COMMAND' ), "\n";
+    print join( "\t", $_->{ 'USER' }, $_->{ 'PID' }, $_->{ '%CPU' }, $_->{ '%MEM' }, $_->{ 'TMP_DIR' }, $_->{ 'START_TIME' }, $_->{ 'RUN_TIME' }, $_->{ 'COMMAND' } ), "\n" foreach @table;
+
+    sleep $options->{ 'time' };
+}
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> SUBROUTINES <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+sub process_info_mac
+{
+    # Martin A. Hansen, June 2009.
+
+    # Get process info for a given process given a PID by
+    # calling ps aux on a Mac.
+
+    # ps aux:
+    # USER       PID %CPU %MEM      VSZ    RSS   TT  STAT STARTED      TIME COMMAND
+
+    my ( $pid,   # process id
+       ) = @_;
+
+    # Returns a hashref
+
+    my ( @processes, $process, @fields, %info_hash, $hour, $min, $ampm );
+
+    @processes = `ps aux`;
+
+    shift @processes;
+
+    foreach $process ( @processes )
+    {
+        @fields = split " ", $process;
+
+        if ( $fields[ 1 ] == $pid )
+        {
+            %info_hash = (
+                "USER"    => $fields[ 0 ],
+                "PID"     => $fields[ 1 ],
+                "%CPU"    => $fields[ 2 ],
+                "%MEM"    => $fields[ 3 ],
+                "VSZ"     => $fields[ 4 ],
+                "RSS"     => $fields[ 5 ],
+                "TT"      => $fields[ 6 ],
+                "STAT"    => $fields[ 7 ],
+                "STARTED" => $fields[ 8 ],
+                "TIME"    => $fields[ 9 ],
+                "COMMAND" => $fields[ 10 ],
+            );
+
+            if ( $info_hash{ 'STARTED' } =~ /^(\d+):(\d+)(AM|PM)$/ )
+            {
+                $hour = $1;
+                $min  = $2;
+                $ampm = $3;
+
+                if ( $ampm eq "PM" ) {
+                    $hour += 12;
+                }
+
+                $info_hash{ 'STARTED' } = "$hour:$min";
+            }
+
+            return wantarray ? %info_hash : \%info_hash;
+        }
+    }
+
+    return;
+}
+
+
+sub get_status_info
+{
+    my ( $file,   #
+       ) = @_;
+
+    my ( $fh, $line, $time, $args, $tmp_dir, $du );
+
+    if (-e $file)
+    {
+        $fh = Maasha::Filesys::file_read_open( $file );
+        flock($fh, 1);
+        $line = <$fh>;
+        close $fh;
+    }
+
+    chomp $line;
+
+    ( $time, $args, $tmp_dir ) = split ";", $line;
+
+    if ( $tmp_dir and -d $tmp_dir )
+    {
+        $du = `du -sh $tmp_dir`;
+
+        chomp $du;
+
+        $du =~ s/\s.*//;
+    }
+
+    return wantarray ? ( $time, $args, $du ) : [ $time, $args, $du ];
+}
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+BEGIN
+{
+    Maasha::Biopieces::status_set();
+}
+
+
+END
+{
+    Maasha::Biopieces::status_log();
+}
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+__END__

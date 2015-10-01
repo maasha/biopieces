@@ -1,0 +1,202 @@
+#!/usr/bin/env perl
+
+# Copyright (C) 2007-2009 Martin A. Hansen.
+
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+
+# http://www.gnu.org/copyleft/gpl.html
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> DESCRIPTION <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# Use bowtie to map sequences in the stream against a specified genome or index.
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+use warnings;
+use strict;
+use Data::Dumper;
+use Maasha::Biopieces;
+use Maasha::Common;
+use Maasha::Fastq;
+use Maasha::Fasta;
+use Maasha::Calc;
+
+use constant {
+    SEQ_NAME => 0,
+    SEQ      => 1,
+    SCORES   => 2,
+};
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+my ( $options, $in, $out, $index, $tmp_dir, $tmp_in, $tmp_out, $fh_in, $fh_out, $record, $entry, $line, @fields, $type, @args, $arg );
+
+$options = Maasha::Biopieces::parse_options(
+    [
+        { long => 'genome',      short => 'g', type => 'genome', mandatory => 'no', default => undef, allowed => undef,     disallowed => undef },
+        { long => 'index_name',  short => 'i', type => 'string', mandatory => 'no', default => undef, allowed => undef,     disallowed => undef },
+        { long => 'mismatches',  short => 'm', type => 'uint',   mandatory => 'no', default => 0,     allowed => "0,1,2,3", disallowed => undef },
+        { long => 'max_hits',    short => 'h', type => 'uint',   mandatory => 'no', default => undef, allowed => undef,     disallowed => 0     },
+        { long => 'seed_length', short => 's', type => 'uint',   mandatory => 'no', default => 28,    allowed => undef,     disallowed => 0     },
+        { long => 'cpus',        short => 'c', type => 'uint',   mandatory => 'no', default => 1,     allowed => undef,     disallowed => 0     },
+    ]   
+);
+
+Maasha::Common::error( qq(both --index_name and --genome specified) ) if     $options->{ "genome" } and     $options->{ "index_name" };
+Maasha::Common::error( qq(no --index_name or --genome specified) )    if not $options->{ "genome" } and not $options->{ "index_name" };
+
+$in  = Maasha::Biopieces::read_stream( $options->{ "stream_in" } );
+$out = Maasha::Biopieces::write_stream( $options->{ "stream_out" } );
+
+if ( defined $options->{ 'genome' } ) {
+    $index = "$ENV{ 'BP_DATA' }/genomes/$options->{ 'genome' }/bowtie/$options->{ 'genome' }";
+} elsif (defined $options->{ 'index_name' } ) {
+    $index = $options->{ 'index_name' };
+}
+
+$tmp_dir = Maasha::Biopieces::get_tmpdir();
+$tmp_in  = "$tmp_dir/bowtie.seq";
+$tmp_out = "$tmp_dir/bowtie.out";
+
+$fh_out = Maasha::Filesys::file_write_open( $tmp_in );
+
+while ( $record = Maasha::Biopieces::get_record( $in ) ) 
+{
+    if ( $entry = Maasha::Fastq::biopiece2fastq( $record ) )
+    {
+        Maasha::Common::error( "Mixed FASTA and FASTQ entries in stream" ) if defined $type and $type ne "FASTQ";
+        Maasha::Common::error( "Sequence longer than 1024 not allowed")    if length( $entry->[ SEQ ] ) > 1024;
+        Maasha::Fastq::put_entry( $entry, $fh_out );
+
+        $type = "FASTQ";
+    }
+    elsif ( $entry = Maasha::Fasta::biopiece2fasta( $record ) )
+    {
+        Maasha::Common::error( "Mixed FASTA and FASTQ entries in stream" ) if defined $type and $type ne "FASTA";
+        Maasha::Common::error( "Sequence longer than 1024 not allowed")    if length( $entry->[ SEQ ] ) > 1024;
+        Maasha::Fasta::put_entry( $entry, $fh_out );
+
+        $type = "FASTA";
+    }
+
+    Maasha::Biopieces::put_record( $record, $out );
+}
+
+close $fh_out;
+
+push @args, "-n $options->{ 'mismatches' }";
+push @args, "-v $options->{ 'mismatches' }";  # DANGER: using seed mismatches as alignment mismatches - may work, may not!
+push @args, "-f" if $type eq "FASTA";
+push @args, "-p $options->{ 'cpus' }";
+push @args, "--phred33-quals" unless $type eq "FASTA";
+
+if ( defined $options->{ 'max_hits' } ) {
+    push @args, "-k $options->{ 'max_hits' }";
+} else {
+    push @args, "-a";
+}
+
+$arg = join " ", @args;
+
+if ( $options->{ 'verbose' } )
+{
+    print STDERR qq(Running: bowtie $arg $index $tmp_in $tmp_out\n);
+    Maasha::Common::run( "bowtie", "$arg $index $tmp_in $tmp_out" );
+}
+else
+{
+    Maasha::Common::run( "bowtie", "$arg $index $tmp_in $tmp_out > /dev/null 2>&1" );
+}
+
+unlink $tmp_in;
+
+$fh_in = Maasha::Filesys::file_read_open( $tmp_out );
+
+while ( $line = <$fh_in> )
+{
+    chomp $line;
+
+    @fields = split /\t/, $line;
+    $record = bowtie2biopiece( \@fields );
+
+    Maasha::Biopieces::put_record( $record, $out );
+}
+
+close $fh_out;
+
+unlink $tmp_out;
+
+Maasha::Biopieces::close_stream( $in );
+Maasha::Biopieces::close_stream( $out );
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> SUBROUTINES <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+sub bowtie2biopiece
+{
+    # Martin A. Hansen, July 2009
+
+    # Convert a bowtie entry to a Biopiece record.
+
+    my ( $entry,   # bowtie entry
+       ) = @_;
+
+    # Returns a hash.
+
+    my ( $record, $s_id, $s_len, $hits );
+
+    $record->{ 'Q_ID' }       = $entry->[ 0 ];
+    $record->{ 'STRAND' }     = $entry->[ 1 ];
+    $record->{ 'S_ID' }       = $entry->[ 2 ];
+    $record->{ 'S_BEG' }      = $entry->[ 3 ];
+    $record->{ 'SEQ' }        = $entry->[ 4 ];
+    $record->{ 'SCORES' }     = $entry->[ 5 ];
+    $record->{ 'SCORE' }      = $entry->[ 6 ] + 1;
+    $record->{ 'ALIGN' }      = $entry->[ 7 ] || '.';
+    $record->{ 'S_LEN' }      = length $entry->[ 4 ];
+    $record->{ 'SEQ_LEN' }    = length $entry->[ 4 ];
+    $record->{ 'S_END' }      = $record->{ 'S_BEG' } + $record->{ 'SEQ_LEN' } - 1;
+    $record->{ 'SCORES' }     =~ s/(.)/chr( ( ord( $1 ) - 33 ) + 64 )/ge; # convert phred scores to illumina scores
+
+    $record->{ 'HITS' }       = '.';
+    $record->{ 'REC_TYPE' } = "BOWTIE";
+
+    return wantarray ? %{ $record } : $record; 
+}
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+BEGIN
+{
+    Maasha::Biopieces::status_set();
+}
+
+
+END
+{
+    Maasha::Biopieces::status_log();
+}
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+__END__

@@ -1,0 +1,97 @@
+#!/usr/bin/env ruby
+
+# Copyright (C) 2007-2013 Martin A. Hansen.
+
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+
+# http://www.gnu.org/copyleft/gpl.html
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# This program is part of the Biopieces framework (www.biopieces.org).
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> DESCRIPTION <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# Merge pair-end sequences in the stream.
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+require 'maasha/biopieces'
+require 'maasha/seq'
+require 'pp'
+
+def names_match(entry1, entry2)
+  if entry1.seq_name =~ /^([^ ]+) \d:/
+    name1 = $1
+  elsif entry1.seq_name =~ /^(.+)\/\d$/
+    name1 = $1
+  else
+    raise "Could not match sequence name: #{entry1.seq_name}"
+  end
+
+  if entry2.seq_name =~ /^([^ ]+) \d:/
+    name2 = $1
+  elsif entry2.seq_name =~ /^(.+)\/\d$/
+    name2 = $1
+  else
+    raise "Could not match sequence name: #{entry2.seq_name}"
+  end
+
+  name1 == name2
+end
+
+options = Biopieces.options_parse(ARGV)
+
+entry1 = nil
+entry2 = nil
+
+Biopieces.open(options[:stream_in], options[:stream_out]) do |input, output|
+  input.each_record do |record|
+    if record[:SEQ_NAME] and record[:SEQ]
+      if entry1.nil?
+         entry1 = Seq.new_bp(record)
+      elsif entry2.nil?
+        entry2 = Seq.new_bp(record)
+      end
+
+      if entry1 and entry2
+        if names_match(entry1, entry2)
+          seq_len_left  = entry1.length
+          seq_len_right = entry2.length
+
+          entry1 << entry2
+
+          new_record = entry1.to_bp
+          new_record[:SEQ_LEN_LEFT]  = seq_len_left
+          new_record[:SEQ_LEN_RIGHT] = seq_len_right
+          output.puts new_record
+        else
+          raise "name mismatch: #{entry1.seq_name} != #{entry2.seq_name}"
+        end
+
+        entry1 = nil
+        entry2 = nil
+      end
+    else
+      output.puts record
+    end
+  end
+end
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+__END__

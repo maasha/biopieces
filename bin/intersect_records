@@ -1,0 +1,126 @@
+#!/usr/bin/env perl
+
+# Copyright (C) 2007-2009 Martin A. Hansen.
+
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+
+# http://www.gnu.org/copyleft/gpl.html
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> DESCRIPTION <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# Intersect records in the stream based on overlapping intervals contained in values to specific keys.
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+use warnings;
+use strict;
+use Maasha::Biopieces;
+use Data::Dumper;
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+my ( $options, $in, $out, $record, $opt_key, $opt_strand, $found, $pos, $lookup_hash );
+
+$options = Maasha::Biopieces::parse_options(
+    [
+        { long => 'key',     short => 'k', type => 'string', mandatory => 'yes', default => undef, allowed => undef, disallowed => undef },
+        { long => 'strand',  short => 's', type => 'flag',   mandatory => 'no',  default => undef, allowed => undef, disallowed => undef },
+        { long => 'inverse', short => 'i', type => 'flag',   mandatory => 'no',  default => undef, allowed => undef, disallowed => undef },
+    ]   
+);
+
+$in  = Maasha::Biopieces::read_stream( $options->{ "stream_in" } );
+$out = Maasha::Biopieces::write_stream( $options->{ "stream_out" } );
+
+$opt_key    = $options->{ 'key' };
+$opt_strand = $options->{ 'strand' };
+
+while ( $record = Maasha::Biopieces::get_record( $in ) ) 
+{
+    if ( exists $record->{ 'S_ID' } and exists $record->{ 'S_BEG' } and exists $record->{ 'S_END' } )
+    {
+        $record->{ 'STRAND' } ||= '.';
+
+        if ( exists $record->{ $opt_key } )
+        {
+            map { $lookup_hash->{ $record->{ 'S_ID' } }->{ $record->{ 'STRAND' } }->{ $_ } = 1 } ( $record->{ 'S_BEG' } .. $record->{ 'S_END' } );
+        }
+        else
+        {
+            $found = 0;
+
+            foreach $pos ( $record->{ 'S_BEG' } .. $record->{ 'S_END' } )
+            {
+                if ( $opt_strand )
+                {
+                    if ( exists $lookup_hash->{ $record->{ 'S_ID' } }->{ $record->{ 'STRAND' } }->{ $pos } )
+                    {
+                        $found = 1;
+
+                        last;
+                    }
+                }
+                else
+                {
+                    if ( exists $lookup_hash->{ $record->{ 'S_ID' } }->{ '+' }->{ $pos } or
+                         exists $lookup_hash->{ $record->{ 'S_ID' } }->{ '-' }->{ $pos }
+                    )
+                    {
+                        $found = 1;
+
+                        last;
+                    }
+                }
+            }
+
+            if ( (     $found and not $options->{ 'inverse' } ) or
+                 ( not $found and     $options->{ 'inverse' } )
+            )
+            {
+                Maasha::Biopieces::put_record( $record, $out );
+            }
+        }
+    }
+}
+
+# print Dumper( $lookup_hash );
+
+Maasha::Biopieces::close_stream( $in );
+Maasha::Biopieces::close_stream( $out );
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+BEGIN
+{
+    Maasha::Biopieces::status_set();
+}
+
+
+END
+{
+    Maasha::Biopieces::status_log();
+}
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+__END__

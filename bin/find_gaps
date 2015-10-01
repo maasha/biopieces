@@ -1,0 +1,139 @@
+#!/usr/bin/env perl
+
+# Copyright (C) 2007-2010 Martin A. Hansen.
+
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+
+# http://www.gnu.org/copyleft/gpl.html
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> DESCRIPTION <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# Find stretches of N's in sequences from the stream.
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+use warnings;
+use strict;
+use Maasha::Biopieces;
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+my ( $options, $in, $out, $record, $gaps, $gap );
+
+$options = Maasha::Biopieces::parse_options(
+    [
+        { long => 'min_len', short => 'm', type => 'uint', mandatory => 'no', default => 5, allowed => undef, disallowed => 0 },
+    ]   
+);
+
+$in  = Maasha::Biopieces::read_stream( $options->{ "stream_in" } );
+$out = Maasha::Biopieces::write_stream( $options->{ "stream_out" } );
+
+while ( $record = Maasha::Biopieces::get_record( $in ) )
+{
+    Maasha::Biopieces::put_record( $record, $out );
+
+    if ( exists $record->{ 'SEQ' } )
+    {
+        $gaps = find_gaps( $record->{ 'SEQ' }, $options->{ 'min_len' } );
+
+        foreach $gap ( @{ $gaps } )
+        {
+            $gap->{ 'S_ID' } = $record->{ 'S_ID' } || $record->{ 'SEQ_NAME' };
+
+            Maasha::Biopieces::put_record( $gap, $out ); 
+        }
+    }
+}
+
+Maasha::Biopieces::close_stream( $in );
+Maasha::Biopieces::close_stream( $out );
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> SUBROUTINES <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+sub find_gaps
+{
+    # Martin A. Hansen, March 2010.
+    
+    # Find  stretches, larger than or equal to a given minimum
+    # of N's in a sequence, and returns a list of intervals
+    # with these.
+
+    my ( $seq,   # Sequence
+         $min,   # Minimum stretch length
+       ) = @_;
+
+    # Returns a list.
+
+    my ( $gap_char, @gaps, $block, $beg, $end );
+
+    $gap_char = 'N';
+
+    $seq = uc $seq;
+
+    $block = $gap_char x $min;
+
+    $beg = 0;
+
+    while ( 1 )
+    {
+        $beg = index $seq, $block, $beg;
+
+        last if $beg < 0;
+
+        $end = $beg;
+
+        while ( substr( $seq, $end, 1 ) eq $gap_char ) {
+            $end++;
+        }
+
+        push @gaps, {
+            S_BEG => $beg,
+            S_END => $end - 1,
+            S_LEN => $end - $beg,
+        };
+
+        $beg = $end + 1;
+    }
+
+    return wantarray ? @gaps : \@gaps;
+}
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+BEGIN
+{
+    Maasha::Biopieces::status_set();
+}
+
+
+END
+{
+    Maasha::Biopieces::status_log();
+}
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+__END__

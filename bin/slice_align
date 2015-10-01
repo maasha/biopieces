@@ -1,0 +1,225 @@
+#!/usr/bin/env ruby
+
+# Copyright (C) 2007-2010 Martin A. Hansen.
+
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+
+# http://www.gnu.org/copyleft/gpl.html
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# This program is part of the Biopieces framework (www.biopieces.org).
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> DESCRIPTION <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# Slice aligned sequences in the stream to obtain subsequences.
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+require 'maasha/biopieces'
+require 'maasha/fasta'
+require 'maasha/seq'
+
+indels = Regexp.new(/-|\.|~/)
+
+casts = []
+casts << {long: 'beg',            short: 'b', type: 'uint',   mandatory: false, default: nil, allowed: nil, disallowed: "0"}
+casts << {long: 'end',            short: 'e', type: 'uint',   mandatory: false, default: nil, allowed: nil, disallowed: "0"}
+casts << {long: 'forward',        short: 'f', type: 'string', mandatory: false, default: nil, allowed: nil, disallowed: nil}
+casts << {long: 'forward_rc',     short: 'F', type: 'string', mandatory: false, default: nil, allowed: nil, disallowed: nil}
+casts << {long: 'reverse',        short: 'r', type: 'string', mandatory: false, default: nil, allowed: nil, disallowed: nil}
+casts << {long: 'reverse_rc',     short: 'R', type: 'string', mandatory: false, default: nil, allowed: nil, disallowed: nil}
+casts << {long: 'template_file',  short: 't', type: 'file!',  mandatory: false, default: nil, allowed: nil, disallowed: nil}
+casts << {long: 'mismatches',     short: 'm', type: 'uint',   mandatory: false, default: 2,   allowed: nil, disallowed: nil}
+casts << {long: 'insertions',     short: 'i', type: 'uint',   mandatory: false, default: 1,   allowed: nil, disallowed: nil}
+casts << {long: 'deletions',      short: 'd', type: 'uint',   mandatory: false, default: 1,   allowed: nil, disallowed: nil}
+
+options = Biopieces.options_parse(ARGV, casts)
+
+if options[:beg]
+  raise "both --beg and --end must be speficied" unless options[:end]
+  options[:beg] -= 1
+  options[:end] -= 1
+  raise "--beg (#{options[:beg]}) must be less than --end (#{options[:end]})" if options[:beg] > options[:end]
+elsif options[:forward] or options[:forward_rc]
+  raise "both --forward and --reverse or --reverse_rc must be specified" unless options[:reverse] or options[:reverse_rc]
+
+  if options[:forward_rc]
+    options[:forward] = Seq.new(seq: options[:forward_rc], type: :dna).reverse.complement.seq
+  end
+
+  if options[:reverse_rc]
+    options[:reverse] = Seq.new(seq: options[:reverse_rc], type: :dna).reverse.complement.seq
+  end
+else
+  raise "either --beg/--end or --forward/--reverse|--reverse_rc must be specified"
+end
+
+if options[:template_file]
+  template = Fasta.open(options[:template_file]).get_entry
+
+  if options[:beg]
+    mbeg = options[:beg]
+    mend = options[:end]
+    i    = 0
+
+    while template.seq[i]
+      unless template.seq[i].match indels
+        if mbeg > 0
+          mbeg -= 1
+          mend -= 1
+        else
+          options[:beg] = i
+          break
+        end
+      end
+
+      i += 1
+    end
+
+    while template.seq[i]
+      unless template.seq[i].match indels
+        if mend > 0
+          mend -= 1
+        else
+          options[:end] = i
+          break
+        end
+      end
+
+      i += 1
+    end
+  else
+    compact = Seq.new(seq: template.seq.dup)
+    compact.seq.delete! "-.~"
+
+    fmatch = compact.patmatch(options[:forward],
+                              max_mismatches: options[:mismatches],
+                              max_insertions: options[:insertions],
+                              max_deletions: options[:deletions])
+
+    raise "forward primer: #{options[:forward]} not found" if fmatch.nil?
+
+    rmatch = compact.patmatch(options[:reverse],
+                              max_mismatches: options[:mismatches],
+                              max_insertions: options[:insertions],
+                              max_deletions: options[:deletions])
+
+    raise "reverse primer: #{options[:reverse]} not found" if rmatch.nil?
+
+    mbeg = fmatch.pos
+    mend = rmatch.pos + rmatch.length - 1
+
+    i = 0
+
+    while template.seq[i]
+      unless template.seq[i].match indels
+        if mbeg > 0
+          mbeg -= 1
+          mend -= 1
+        else
+          options[:beg] = i
+          break
+        end
+      end
+
+      i += 1
+    end
+
+    while template.seq[i]
+      unless template.seq[i].match indels
+        if mend > 0
+          mend -= 1
+        else
+          options[:end] = i
+          break
+        end
+      end
+
+      i += 1
+    end
+  end
+end
+
+Biopieces.open(options[:stream_in], options[:stream_out]) do |input, output|
+  input.each_record do |record|
+    if record[:SEQ]
+      entry = Seq.new(seq: record[:SEQ])
+
+      unless options[:beg]
+        raise "template length != alignment length" if template and template.length != entry.length
+        compact = template ? template : Seq.new(seq: entry.seq.dup)
+        compact.seq.delete! "-.~"
+
+        fmatch = compact.patmatch(options[:forward],
+                                  max_mismatches: options[:mismatches],
+                                  max_insertions: options[:insertions],
+                                  max_deletions: options[:deletions])
+
+        raise "forward primer: #{options[:forward]} not found" if fmatch.nil?
+
+        rmatch = compact.patmatch(options[:reverse],
+                                  max_mismatches: options[:mismatches],
+                                  max_insertions: options[:insertions],
+                                  max_deletions: options[:deletions])
+
+        raise "reverse primer: #{options[:reverse]} not found" if rmatch.nil?
+
+        mbeg = fmatch.pos
+        mend = rmatch.pos + rmatch.length - 1
+
+        i = 0
+
+        while entry.seq[i]
+          unless entry.seq[i].match indels
+            if mbeg > 0
+              mbeg -= 1
+              mend -= 1
+            else
+              options[:beg] = i
+              break
+            end
+          end
+
+          i += 1
+        end
+
+        while entry.seq[i]
+          unless entry.seq[i].match indels
+            if mend > 0
+              mend -= 1
+            else
+              options[:end] = i
+              break
+            end
+          end
+
+          i += 1
+        end
+      end
+
+      record[:SEQ]     = entry[options[:beg] .. options[:end]].seq
+      record[:SEQ_LEN] = record[:SEQ].length
+    end
+
+    output.puts record
+  end
+end
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+__END__

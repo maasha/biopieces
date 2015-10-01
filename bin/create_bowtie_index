@@ -1,0 +1,97 @@
+#!/usr/bin/env perl
+
+# Copyright (C) 2007-2009 Martin A. Hansen.
+
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+
+# http://www.gnu.org/copyleft/gpl.html
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> DESCRIPTION <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# Create a Bowtie index from sequences in stream for use with [bowtie_seq].
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+use warnings;
+use strict;
+use Maasha::Common;
+use Maasha::Biopieces;
+use Maasha::Filesys;
+use Maasha::Fasta;
+use Maasha::Bowtie;
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+my ( $default, $formats, $options, $in, $out, $record, $tmp_dir, $file_tmp, $fh_tmp, $entry );
+
+$options = Maasha::Biopieces::parse_options(
+    [
+        { long => 'no_stream',  short => 'x', type => 'flag',   mandatory => 'no',  default => undef, allowed => undef, disallowed => undef },
+        { long => 'directory',  short => 'd', type => 'dir',    mandatory => 'yes', default => undef, allowed => undef, disallowed => undef },
+        { long => 'index_name', short => 'i', type => 'string', mandatory => 'yes', default => undef, allowed => undef, disallowed => undef },
+    ]   
+);
+
+Maasha::Filesys::dir_create_if_not_exists( $options->{ 'directory' } );
+
+$in  = Maasha::Biopieces::read_stream( $options->{ "stream_in" } );
+$out = Maasha::Biopieces::write_stream( $options->{ "stream_out" } );
+
+$tmp_dir  = Maasha::Biopieces::get_tmpdir();
+$file_tmp = "$tmp_dir/create_bowtie_index.seq";
+$fh_tmp   = Maasha::Filesys::file_write_open( $file_tmp );
+
+while ( $record = Maasha::Biopieces::get_record( $in ) ) 
+{
+    if ( $entry = Maasha::Fasta::biopiece2fasta( $record ) ) {
+        Maasha::Fasta::put_entry( $entry, $fh_tmp );
+    }
+
+    Maasha::Biopieces::put_record( $record, $out ) if not $options->{ "no_stream" };
+}
+
+close $fh_tmp;
+
+Maasha::Bowtie::bowtie_index( $file_tmp, $options->{ 'directory' }, $options->{ 'index_name' }, $options->{ 'verbose' } );
+
+unlink $file_tmp;
+
+Maasha::Biopieces::close_stream( $in );
+Maasha::Biopieces::close_stream( $out );
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+BEGIN
+{
+    Maasha::Biopieces::status_set();
+}
+
+
+END
+{
+    Maasha::Biopieces::status_log();
+}
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+__END__

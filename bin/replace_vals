@@ -1,0 +1,86 @@
+#!/usr/bin/env ruby
+
+# Copyright (C) 2007-2011 Martin A. Hansen.
+
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+
+# http://www.gnu.org/copyleft/gpl.html
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# This program is part of the Biopieces framework (www.biopieces.org).
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> DESCRIPTION <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# Replace values to a specied key for each record in the stream.
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+require 'maasha/biopieces'
+
+casts = []
+casts << {:long=>'key',         :short=>'k', :type=>'string', :mandatory=>true,  :default=>nil,   :allowed=>nil, :disallowed=>nil}
+casts << {:long=>'search',      :short=>'s', :type=>'string', :mandatory=>false, :default=>nil,   :allowed=>nil, :disallowed=>nil}
+casts << {:long=>'replace',     :short=>'r', :type=>'string', :mandatory=>false, :default=>nil,   :allowed=>nil, :disallowed=>nil}
+casts << {:long=>'file',        :short=>'f', :type=>'file!',  :mandatory=>false, :default=>nil,   :allowed=>nil, :disallowed=>nil}
+casts << {:long=>'search_col',  :short=>'S', :type=>'uint',   :mandatory=>false, :default=>1,     :allowed=>nil, :disallowed=>"0"}
+casts << {:long=>'replace_col', :short=>'R', :type=>'uint',   :mandatory=>false, :default=>2,     :allowed=>nil, :disallowed=>"0"}
+casts << {:long=>'delimiter',   :short=>'d', :type=>'string', :mandatory=>false, :default=>'\s+', :allowed=>nil, :disallowed=>nil}
+
+options   = Biopieces.options_parse(ARGV, casts)
+key       = options[:key].to_sym
+delimiter = Regexp.new(options[:delimiter])
+
+raise ArgumentError, "both --search and --replace must be specified" if options[:search]  and not options[:replace]
+raise ArgumentError, "both --search and --replace must be specified" if options[:replace] and not options[:search]
+
+replace_hash = {}
+
+if options[:search]
+  replace_hash[options[:search].to_s] = options[:replace].to_s
+end
+
+if options[:file]
+  File.open(options[:file], "r") do |ios|
+    ios.each_line do |line|
+      unless line[0] == '#'
+        fields = line.chomp.split(delimiter)
+        k      = fields[options[:search_col] - 1]
+        v      = fields[options[:replace_col] - 1]
+
+        raise RuntimeError, "duplicate key: #{k} found in file" if replace_hash[k]
+
+        replace_hash[k] = v
+      end
+    end
+  end
+end
+
+Biopieces.open(options[:stream_in], options[:stream_out]) do |input, output|
+  input.each_record do |record|
+    if record[key]
+      if replace_hash[record[key]]
+        record[key] = replace_hash[record[key]]
+      end
+    end
+
+    output.puts record
+  end
+end
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+__END__

@@ -1,0 +1,150 @@
+#!/usr/bin/env perl
+
+# Copyright (C) 2007-2009 Martin A. Hansen.
+
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+
+# http://www.gnu.org/copyleft/gpl.html
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> DESCRIPTION <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# Use soap to match short nucleotide sequences in the stream against a specified genome.
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+use warnings;
+use strict;
+use Maasha::Biopieces;
+use Maasha::Common;
+use Maasha::Filesys;
+use Maasha::Fasta;
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+my ( $options, $in, $out, $tmp_dir, $tmp_in, $tmp_out, $fh_out, $record, $entry, $count, $args, $line, @fields );
+
+$options = Maasha::Biopieces::parse_options(
+    [
+        { long => 'in_file',    short => 'i', type => 'file',   mandatory => 'no', default => undef, allowed => undef, disallowed => undef },
+        { long => 'genome',     short => 'g', type => 'genome', mandatory => 'no', default => undef, allowed => undef, disallowed => undef },
+        { long => 'seed_size',  short => 's', type => 'uint',   mandatory => 'no', default => 10,    allowed => undef, disallowed => undef },
+        { long => 'mismatches', short => 'm', type => 'uint',   mandatory => 'no', default => 2,     allowed => undef, disallowed => undef },
+        { long => 'gap_size',   short => 'G', type => 'uint',   mandatory => 'no', default => 0,     allowed => undef, disallowed => undef },
+        { long => 'cpus',       short => 'c', type => 'uint',   mandatory => 'no', default => 1,     allowed => undef, disallowed => 0 },
+    ]   
+);
+
+Maasha::Common::error( qq(both --in_file and --genome specified) ) if     $options->{ "genome" } and     $options->{ "in_file" };
+Maasha::Common::error( qq(no --in_file or --genome specified) )    if not $options->{ "genome" } and not $options->{ "in_file" };
+
+$in  = Maasha::Biopieces::read_stream( $options->{ "stream_in" } );
+$out = Maasha::Biopieces::write_stream( $options->{ "stream_out" } );
+
+$options->{ "in_file" } = "$ENV{ 'BP_DATA' }/genomes/$options->{ 'genome' }/fasta/$options->{ 'genome' }.fna" if $options->{ 'genome' };
+
+$tmp_dir = Maasha::Biopieces::get_tmpdir();
+$tmp_in  = "$tmp_dir/soap_query.seq";
+$tmp_out = "$tmp_dir/soap.result";
+
+$fh_out = Maasha::Common::write_open( $tmp_in );
+
+$count = 0;
+
+while ( $record = Maasha::Biopieces::get_record( $in ) ) 
+{
+    if ( $entry = Maasha::Fasta::biopiece2fasta( $record ) )
+    {
+        Maasha::Fasta::put_entry( $entry, $fh_out );
+
+        $count++;
+    }
+
+    Maasha::Biopieces::put_record( $record, $out );
+}
+
+close $fh_out;
+
+if ( $count > 0 )
+{
+    $args = join( " ",
+        "-s $options->{ 'seed_size' }",
+        "-r 2",
+        "-a $tmp_in",
+        "-v $options->{ 'mismatches' }",
+        "-g $options->{ 'gap_size' }",
+        "-p $options->{ 'cpus' }",
+        "-d $options->{ 'in_file' }",
+        "-o $tmp_out",
+    );
+
+    $args .= " > /dev/null 2>&1" if not $options->{ 'verbose' };
+
+    Maasha::Common::run( "soap", $args, 1 );
+
+    unlink $tmp_in;
+
+    $fh_out = Maasha::Filesys::file_read_open( $tmp_out );
+
+    undef $record;
+
+    while ( $line = <$fh_out> )
+    {
+        chomp $line;
+
+        @fields = split /\t/, $line;
+
+        $record->{ "REC_TYPE" }   = "SOAP";
+        $record->{ "Q_ID" }       = $fields[ 0 ];
+        $record->{ "SCORE" }      = $fields[ 3 ];
+        $record->{ "STRAND" }     = $fields[ 6 ];
+        $record->{ "S_ID" }       = $fields[ 7 ];
+        $record->{ "S_BEG" }      = $fields[ 8 ] - 1; # soap is 1-based
+        $record->{ "S_END" }      = $fields[ 8 ] + $fields[ 5 ] - 2;
+
+        Maasha::Biopieces::put_record( $record, $out );
+    }
+
+    close $fh_out;
+}
+
+unlink $tmp_out;
+
+Maasha::Biopieces::close_stream( $in );
+Maasha::Biopieces::close_stream( $out );
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+BEGIN
+{
+    Maasha::Biopieces::status_set();
+}
+
+
+END
+{
+    Maasha::Biopieces::status_log();
+}
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+__END__

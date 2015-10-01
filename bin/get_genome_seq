@@ -1,0 +1,223 @@
+#!/usr/bin/env perl
+
+# Copyright (C) 2007-2009 Martin A. Hansen.
+
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+
+# http://www.gnu.org/copyleft/gpl.html
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> DESCRIPTION <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# Extract subsequences from a genome sequence.
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+use warnings;
+use strict;
+use Data::Dumper;
+use Maasha::Biopieces;
+use Maasha::Filesys;
+use Maasha::Fasta;
+use Maasha::Seq;
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+my ( $options, $in, $out, $record, $genome_file, $index_file, $fh, $genome,
+     $beg, $end, $len, $index_beg, $index_len, @begs, @lens, $index, $seq, $i );
+
+$options = Maasha::Biopieces::parse_options(
+    [
+        { long => 'genome', short => 'g', type => 'genome', mandatory => 'yes', default => undef, allowed => undef, disallowed => undef },
+        { long => 'chr',    short => 'c', type => 'string', mandatory => 'no',  default => undef, allowed => undef, disallowed => undef },
+        { long => 'beg',    short => 'b', type => 'uint',   mandatory => 'no',  default => undef, allowed => undef, disallowed => 0 },
+        { long => 'end',    short => 'e', type => 'uint',   mandatory => 'no',  default => undef, allowed => undef, disallowed => 0 },
+        { long => 'len',    short => 'l', type => 'uint',   mandatory => 'no',  default => undef, allowed => undef, disallowed => 0 },
+        { long => 'flank',  short => 'f', type => 'uint',   mandatory => 'no',  default => 0,     allowed => undef, disallowed => undef },
+        { long => 'mask',   short => 'm', type => 'flag',   mandatory => 'no',  default => undef, allowed => undef, disallowed => undef },
+        { long => 'splice', short => 's', type => 'flag',   mandatory => 'no',  default => undef, allowed => undef, disallowed => undef },
+    ]   
+);
+
+$in  = Maasha::Biopieces::read_stream( $options->{ "stream_in" } );
+$out = Maasha::Biopieces::write_stream( $options->{ "stream_out" } );
+
+if ( $options->{ "genome" } ) 
+{
+    $genome      = $options->{ "genome" };
+
+    $genome_file = "$ENV{ 'BP_DATA' }/genomes/$genome/fasta/$genome.fna";
+    $index_file  = "$ENV{ 'BP_DATA' }/genomes/$genome/fasta/$genome.index";
+
+    $fh          = Maasha::Filesys::file_read_open( $genome_file );
+    $index       = Maasha::Fasta::index_retrieve( $index_file );
+
+    if ( defined $options->{ "chr" } and exists $index->{ $options->{ "chr" } } and defined $options->{ "beg" } and ( defined $options->{ "end" } or defined $options->{ "len" } ) )
+    {
+        ( $index_beg, $index_len ) = @{ $index->{ $options->{ "chr" } } };
+
+        $beg = $index_beg + $options->{ "beg" } - 1;
+
+        if ( $options->{ "len" } ) {
+            $len = $options->{ "len" };
+        } elsif ( $options->{ "end" } ) {
+            $len = ( $options->{ "end" } - $options->{ "beg" } + 1 );
+        }   
+        
+        $beg -= $options->{ "flank" };
+        $len += 2 * $options->{ "flank" };
+
+        if ( $beg <= $index_beg )
+        {
+            $len -= $index_beg - $beg;
+            $beg = $index_beg;
+        }
+
+        if ( $beg + $len > $index_beg + $index_len ) {
+            $len = $index_beg + $index_len - $beg;
+        }
+
+        next if $beg > $index_beg + $index_len;
+
+        $record->{ "CHR" }     = $options->{ "chr" };
+        $record->{ "CHR_BEG" } = $beg - $index_beg;
+        $record->{ "CHR_END" } = $record->{ "CHR_BEG" } + $len - 1;
+        
+        $record->{ "SEQ" }     = Maasha::Filesys::file_read( $fh, $beg, $len );
+        $record->{ "SEQ_LEN" } = $len;
+
+        Maasha::Biopieces::put_record( $record, $out );
+    }   
+}
+
+while ( $record = Maasha::Biopieces::get_record( $in ) )
+{
+    if ( $options->{ "genome" } and not $record->{ "SEQ" } )
+    {
+        if ( $record->{ "REC_TYPE" } eq "BED" and exists $index->{ $record->{ "CHR" } } )
+        {
+            ( $index_beg, $index_len ) = @{ $index->{ $record->{ "CHR" } } };
+        
+            $beg = $record->{ "CHR_BEG" } + $index_beg;
+            $len = $record->{ "CHR_END" } - $record->{ "CHR_BEG" } + 1;
+        }
+        elsif ( $record->{ "REC_TYPE" } eq "PSL" and exists $index->{ $record->{ "S_ID" } } )
+        {
+            ( $index_beg, $index_len ) = @{ $index->{ $record->{ "S_ID" } } };
+        
+            $beg = $record->{ "S_BEG" } + $index_beg;
+            $len = $record->{ "S_END" } - $record->{ "S_BEG" } + 1;
+        }
+        elsif ( $record->{ "REC_TYPE" } eq "VMATCH" and exists $index->{ $record->{ "S_ID" } } )
+        {
+            ( $index_beg, $index_len ) = @{ $index->{ $record->{ "S_ID" } } };
+        
+            $beg = $record->{ "S_BEG" } + $index_beg;
+            $len = $record->{ "S_END" } - $record->{ "S_BEG" } + 1;
+        }
+        elsif ( $record->{ "REC_TYPE" } eq "BLAST" and exists $index->{ $record->{ "S_ID" } } )
+        {
+            ( $index_beg, $index_len ) = @{ $index->{ $record->{ "S_ID" } } };
+        
+            $beg = $record->{ "S_BEG" } + $index_beg;
+            $len = $record->{ "S_END" } - $record->{ "S_BEG" } + 1;
+        }
+
+        $beg -= $options->{ "flank" };
+        $len += 2 * $options->{ "flank" };
+
+        if ( $beg <= $index_beg )
+        {
+            $len -= $index_beg - $beg;
+            $beg = $index_beg;
+        }
+
+        $len = $index_beg + $index_len - $beg if $beg + $len > $index_beg + $index_len;
+
+        next if $beg > $index_beg + $index_len;
+
+        $record->{ "CHR_BEG" } = $beg - $index_beg;
+        $record->{ "CHR_END" } = $record->{ "CHR_BEG" } + $len - 1;
+
+        $record->{ "SEQ" } = Maasha::Filesys::file_read( $fh, $beg, $len );
+
+        if ( $record->{ "STRAND" } and $record->{ "STRAND" } eq "-" )
+        {
+            Maasha::Seq::dna_comp( \$record->{ "SEQ" } );
+            $record->{ "SEQ" } = reverse $record->{ "SEQ" };
+        }
+
+        if ( $options->{ "mask" } )
+        {
+            if ( $record->{ "BLOCK_COUNT" } > 1 ) # uppercase hit block segments and lowercase the rest.
+            {
+                $record->{ "SEQ" } = lc $record->{ "SEQ" };
+            
+                @begs = split ",", $record->{ "Q_BEGS" };
+                @lens = split ",", $record->{ "BLOCK_LENS" };
+
+                for ( $i = 0; $i < @begs; $i++ ) {
+                    substr $record->{ "SEQ" }, $begs[ $i ], $lens[ $i ], uc substr $record->{ "SEQ" }, $begs[ $i ], $lens[ $i ];
+                }
+            }
+        }
+        elsif ( $options->{ "splice" } )
+        {
+            if ( $record->{ "BLOCK_COUNT" } > 1 ) # splice block sequences
+            {
+                $seq  = "";
+                @begs = split ",", $record->{ "Q_BEGS" };
+                @lens = split ",", $record->{ "BLOCK_LENS" };
+
+                for ( $i = 0; $i < @begs; $i++ ) {
+                    $seq .= substr $record->{ "SEQ" }, $begs[ $i ], $lens[ $i ];
+                }
+
+                $record->{ "SEQ" } = $seq;
+            }
+        }
+
+        $record->{ "SEQ_LEN" } = length $record->{ "SEQ" };
+    }
+
+    Maasha::Biopieces::put_record( $record, $out );
+}
+
+Maasha::Biopieces::close_stream( $in );
+Maasha::Biopieces::close_stream( $out );
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+BEGIN
+{
+    Maasha::Biopieces::status_set();
+}
+
+
+END
+{
+    Maasha::Biopieces::status_log();
+}
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+__END__

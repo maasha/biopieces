@@ -1,0 +1,70 @@
+#!/usr/bin/env ruby
+
+# Copyright (C) 2007-2011 Martin A. Hansen.
+
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+
+# http://www.gnu.org/copyleft/gpl.html
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# This program is part of the Biopieces framework (www.biopieces.org).
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> DESCRIPTION <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# Find genes in prokaryotic genomic sequences in the stream.
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+require 'maasha/biopieces'
+require 'maasha/fasta'
+require 'maasha/prodigal'
+
+casts = []
+casts << {:long=>'full',      :short=>'f', :type=>'flag',   :mandatory=>false, :default=>nil,      :allowed=>nil,           :disallowed=>nil}
+casts << {:long=>'procedure', :short=>'p', :type=>'string', :mandatory=>true,  :default=>'single', :allowed=>'single,meta', :disallowed=>nil}
+
+options = Biopieces.options_parse(ARGV, casts)
+
+tmpdir  = Biopieces.mktmpdir
+infile  = File.join(tmpdir, "in.fna")
+outfile = File.join(tmpdir, "out.prodigal")
+
+Biopieces.open(options[:stream_in], options[:stream_out]) do |input, output|
+  Fasta.open(infile, "w") do |fasta_io|
+    input.each_record do |record|
+      output.puts record
+
+      if record[:SEQ_NAME] and record[:SEQ]
+        seq = Seq.new_bp(record)
+        fasta_io.puts seq.to_fasta
+      end
+    end
+  end
+
+  prodigal = Prodigal.new(infile, outfile, options)
+  prodigal.run
+
+  prodigal.each do |record|
+    output.puts record
+  end
+end
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+__END__

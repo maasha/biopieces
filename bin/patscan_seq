@@ -1,0 +1,241 @@
+#!/usr/bin/env ruby
+
+# Copyright (C) 2007-2011 Martin A. Hansen.
+
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+
+# http://www.gnu.org/copyleft/gpl.html
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# This program is part of the Biopieces framework (www.biopieces.org).
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> DESCRIPTION <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# Run Patscan on sequences in the stream.
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+require 'maasha/biopieces'
+require 'maasha/fasta'
+require 'maasha/seq'
+
+# Class with methods to execute Patscan (a.k.a. scan_for_matches).
+class Patscan
+  # Method to initialize a Patscan object.
+  def initialize(tmp_dir, in_file, patterns)
+    @tmp_dir  = tmp_dir
+    @in_file  = in_file
+    @patterns = patterns
+
+    patterns_save
+  end
+
+  # Method to run Patscan
+  def run(options)
+    @patterns.each_with_index do |pattern, i|
+      args = []
+      args << "scan_for_matches"
+      args << "-c"                         if options[:comp]
+      args << "-p"                         if options[:seq_type] == :protein
+      args << "-o 1"                       if options[:overlap]
+      args << "-n #{options[:max_misses]}" if options[:max_misses]
+      args << "-m #{options[:max_hits]}"   if options[:max_hits]
+      args << File.join(@tmp_dir, "#{i}.pat")
+      args << "< #{@in_file}"
+      args << "> " + File.join(@tmp_dir, "#{i}.out")
+      command = args.join(" ")
+      $stderr.puts command if options[:verbose]
+      system(command)
+      raise "Command failed: #{command}" unless $?.success?
+    end
+  end
+
+  # Method to parse Patscan results and return
+  # these in a hash with ID as key and a list
+  # of hits as value.
+  def results_parse
+    results = Hash.new { |h, k| h[k] = [] }
+
+    @patterns.each_with_index do |pattern, i|
+      Fasta.open(File.join(@tmp_dir, "#{i}.out"), 'r') do |ios|
+        ios.each do |entry|
+          if entry.seq_name =~ /([^:]+):\[(\d+),(\d+)\]/
+            id    = $1.to_i
+            start = $2.to_i - 1
+            stop  = $3.to_i - 1
+
+            if stop > start
+              strand = '+'
+            else
+              start, stop = stop, start
+              strand = '-'
+            end
+
+            results[id.to_i] << Match.new(start, stop, strand, pattern, entry.seq)
+          else
+            raise "Failed to parse seq_name: #{entry.seq_name} in patscan result"
+          end
+        end
+      end
+    end
+
+    results
+  end
+
+  private
+
+  # Method to save a patscan pattern to a file.
+  def patterns_save
+    @patterns.each_with_index do |pattern, i|
+      File.open(File.join(@tmp_dir, "#{i}.pat"), 'w') do |ios|
+        ios.puts pattern
+      end
+    end
+  end
+
+  # Subclass to define Patscan hits.
+  class Match
+    attr_reader :start, :stop, :strand, :pattern, :match
+
+    def initialize(start, stop, strand, pattern, match)
+      @start   = start
+      @stop    = stop
+      @strand  = strand
+      @pattern = pattern
+      @match   = match
+    end
+
+    def length
+      @stop - @start + 1
+    end
+  end
+end
+
+casts = []
+casts << {:long=>'pattern',    :short=>'p', :type=>'string', :mandatory=>false, :default=>nil, :allowed=>nil, :disallowed=>nil}
+casts << {:long=>'pattern_in', :short=>'P', :type=>'file!',  :mandatory=>false, :default=>nil, :allowed=>nil, :disallowed=>nil}
+casts << {:long=>'inline',     :short=>'i', :type=>'flag',   :mandatory=>false, :default=>nil, :allowed=>nil, :disallowed=>nil}
+casts << {:long=>'overlap',    :short=>'o', :type=>'flag',   :mandatory=>false, :default=>nil, :allowed=>nil, :disallowed=>nil}
+casts << {:long=>'comp',       :short=>'c', :type=>'flag',   :mandatory=>false, :default=>nil, :allowed=>nil, :disallowed=>nil}
+casts << {:long=>'max_hits',   :short=>'h', :type=>'uint',   :mandatory=>false, :default=>nil, :allowed=>nil, :disallowed=>'0'}
+casts << {:long=>'max_misses', :short=>'m', :type=>'uint',   :mandatory=>false, :default=>nil, :allowed=>nil, :disallowed=>'0'}
+
+options = Biopieces.options_parse(ARGV, casts)
+
+unless options[:pattern] or options[:pattern_in]
+  raise ArgumentError, "--pattern or --pattern_in must be specified"
+end
+
+patterns = []
+
+if options[:pattern_in]
+  File.open(options[:pattern_in], 'r') do |ios|
+    ios.each_line { |l| patterns << l.chomp }
+  end
+else
+  patterns << options[:pattern]
+end
+
+raise ArgumentError, "no patterns found" if patterns.empty?
+
+tmp_dir  = Biopieces.mktmpdir
+tmp_file = File.join(tmp_dir, "tmp.stream")
+in_file  = File.join(tmp_dir, "in.fna")
+
+seq_name_count = 0
+seq_name_hash  = {}
+seq_type       = nil
+
+Biopieces.open(options[:stream_in], tmp_file) do |input, output|
+  Fasta.open(in_file, "w") do |fasta_io|
+    input.each_record do |record|
+      if record[:SEQ_NAME]
+        seq_name_hash[seq_name_count] = record[:SEQ_NAME]
+        record[:SEQ_NAME] = seq_name_count
+        seq_name_count += 1
+
+        seq = Seq.new_bp(record)
+
+        if seq_type.nil?
+          seq_type = seq.type_guess
+        end
+
+        fasta_io.puts seq.to_fasta
+      end
+
+      output.puts record
+    end
+  end
+end
+
+options[:seq_type] = seq_type
+
+patscan = Patscan.new(tmp_dir, in_file, patterns)
+patscan.run(options)
+results = patscan.results_parse
+
+Biopieces.open(tmp_file, options[:stream_out]) do |input, output|
+  input.each_record do |record|
+    if record[:SEQ_NAME]
+      key = record[:SEQ_NAME].to_i
+      record[:SEQ_NAME] = seq_name_hash[key]
+
+      if options[:inline]
+        if results[key]
+          results[key].each do |result|
+            record[:PATTERN]   = result.pattern
+            record[:MATCH]     = result.match
+            record[:S_BEG]     = result.start
+            record[:S_END]     = result.stop
+            record[:STRAND]    = result.strand
+            record[:MATCH_LEN] = result.length
+
+            output.puts record
+          end
+        else
+          output.puts record
+        end
+      else
+        output.puts record
+
+        new_record = {}
+
+        results[key].each do |result|
+          new_record[:REC_TYPE]  = "PATSCAN"
+          new_record[:S_ID]      = record[:SEQ_NAME]
+          new_record[:Q_ID]      = result.pattern
+          new_record[:MATCH]     = result.match
+          new_record[:S_BEG]     = result.start
+          new_record[:S_END]     = result.stop
+          new_record[:STRAND]    = result.strand
+          new_record[:SCORE]     = 100
+          new_record[:MATCH_LEN] = result.length
+
+          output.puts new_record
+        end
+      end
+    else
+      output.puts record
+    end
+  end
+end
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+__END__

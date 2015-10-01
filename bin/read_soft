@@ -1,0 +1,132 @@
+#!/usr/bin/env perl
+
+# Copyright (C) 2007-2009 Martin A. Hansen.
+
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+
+# http://www.gnu.org/copyleft/gpl.html
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> DESCRIPTION <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# Read SOFT entries from one or more files.
+# http://www.ncbi.nlm.nih.gov/geo/info/soft2.html
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+use warnings;
+use strict;
+use Data::Dumper;
+use Maasha::Biopieces;
+use Maasha::Filesys;
+use Maasha::NCBI;
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+my ( $options, $in, $out, $record, $data_in, $num, $entry, $records, $soft_index,
+     $fh, @platforms, $plat_table, @samples, $sample, $old_end, $skip, $file );
+
+$options = Maasha::Biopieces::parse_options(
+    [
+        { long => 'data_in', short => 'i', type => 'files!', mandatory => 'no', default => undef, allowed => undef, disallowed => undef },
+        { long => 'samples', short => 's', type => 'list',   mandatory => 'no', default => undef, allowed => undef, disallowed => undef },
+        { long => 'num',     short => 'n', type => 'uint',   mandatory => 'no', default => undef, allowed => undef, disallowed => '0' },
+    ]   
+);
+
+$in  = Maasha::Biopieces::read_stream( $options->{ "stream_in" } );
+$out = Maasha::Biopieces::write_stream( $options->{ "stream_out" } );
+
+while ( $record = Maasha::Biopieces::get_record( $in ) ) {
+    Maasha::Biopieces::put_record( $record, $out );
+}
+
+$num = 1;
+
+foreach $file ( @{ $options->{ "data_in" } } )
+{
+    print STDERR "Creating index for file: $file\n" if $options->{ "verbose" };
+
+    $soft_index = Maasha::NCBI::soft_index_file( $file );
+
+    # print STDERR Dumper( $soft_index ) if $options->{ "verbose" };
+
+    $fh         = Maasha::Filesys::file_read_open( $file );
+
+    @platforms  = grep { $_->{ "SECTION" } =~ /PLATFORM/ } @{ $soft_index };
+
+    print STDERR "Getting platform tables for file: $file\n" if $options->{ "verbose" };
+
+    $plat_table = Maasha::NCBI::soft_get_platform( $fh, $platforms[ 0 ]->{ "LINE_BEG" }, $platforms[ -1 ]->{ "LINE_END" } );
+
+    @samples    = grep { $_->{ "SECTION" } =~ /SAMPLE/ } @{ $soft_index };
+
+    $old_end    = $platforms[ -1 ]->{ "LINE_END" };
+
+    foreach $sample ( @samples )
+    {
+        $skip = 0;
+        $skip = 1 if ( $options->{ "samples" } and grep { $sample->{ "SECTION" } !~ /$_/ } @{ $options->{ "samples" } } );
+
+        print STDERR "Getting samples for dataset: $sample->{ 'SECTION' }\n" if $options->{ "verbose" } and not $skip;
+
+        $records = Maasha::NCBI::soft_get_sample( $fh, $plat_table, $sample->{ "LINE_BEG" } - $old_end - 1, $sample->{ "LINE_END" } - $old_end - 1, $skip );
+
+        foreach $record ( @{ $records } )
+        {
+            Maasha::Biopieces::put_record( $record, $out );
+
+            goto NUM if $options->{ "num" } and $num == $options->{ "num" };
+
+            $num++;
+        }
+
+        $old_end = $sample->{ "LINE_END" };
+    }
+
+    close $fh;
+}
+
+NUM:
+
+close $data_in if $data_in;
+close $fh if $fh;
+
+Maasha::Biopieces::close_stream( $in );
+Maasha::Biopieces::close_stream( $out );
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+BEGIN
+{
+    Maasha::Biopieces::status_set();
+}
+
+
+END
+{
+    Maasha::Biopieces::status_log();
+}
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+__END__

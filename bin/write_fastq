@@ -1,0 +1,70 @@
+#!/usr/bin/env ruby
+
+# Copyright (C) 2007-2012 Martin A. Hansen.
+
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+
+# http://www.gnu.org/copyleft/gpl.html
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# This program is part of the Biopieces framework (www.biopieces.org).
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> DESCRIPTION <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# Write sequences from stream in FASTQ format.
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+require 'maasha/biopieces'
+require 'maasha/fastq'
+
+allowed_enc = 'base_33,base_64'
+
+casts = []
+casts << {long: 'no_stream', short: 'x', type: 'flag',   mandatory: false, default: nil,       allowed: nil,               disallowed: nil}
+casts << {long: 'data_out',  short: 'o', type: 'file',   mandatory: false, default: nil,       allowed: nil,               disallowed: nil}
+casts << {long: 'encoding',  short: 'e', type: 'string', mandatory: false, default: 'base_33', allowed: allowed_enc,       disallowed: nil}
+casts << {long: 'compress',  short: 'Z', type: 'string', mandatory: false, default: nil,       allowed: "gzip,bzip,bzip2", disallowed: nil}
+
+options = Biopieces.options_parse(ARGV, casts)
+
+encoding = options[:encoding].to_sym
+compress = options[:compress] ? options[:compress].to_sym : nil
+
+raise "--data_out is mandatory for compressed output" if compress and not options[:data_out]
+
+Biopieces.open(options[:stream_in], options[:stream_out]) do |input, output|
+  fastq_out = options[:data_out] ? Fastq.open(options[:data_out], 'w', compress: compress) : STDOUT
+
+  input.each do |record|
+    if record[:SEQ_NAME] and record[:SEQ] and record[:SCORES]
+      entry = Seq.new_bp(record)
+      entry.qual_convert!(:base_33, encoding)
+
+      fastq_out.puts entry.to_fastq
+    end
+
+    output.puts record unless options[:no_stream]
+  end
+
+  fastq_out.close
+end
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+__END__

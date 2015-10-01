@@ -1,0 +1,172 @@
+#!/usr/bin/env ruby
+
+# Copyright (C) 2007-2011 Martin A. Hansen.
+
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+
+# http://www.gnu.org/copyleft/gpl.html
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# This program is part of the Biopieces framework (www.biopieces.org).
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> DESCRIPTION <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# Assemble sequences in the stream using Ray.
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+require 'maasha/biopieces'
+require 'maasha/fasta'
+
+class Ray
+  def initialize(directory, sequence_file, options)
+    @directory     = directory
+    @sequence_file = sequence_file
+    @options       = options
+  end
+
+  def run
+    kmer = @options[:kmer_min]
+
+		if @options[:type] == "single"
+			type = "-s"
+		else
+			type = "-i"
+		end
+
+    while kmer <= @options[:kmer_max]
+      dir_ray = File.join(@directory, "Kmer_#{kmer}")
+
+      Dir.mkdir(dir_ray)
+
+      commands = []
+    	commands << "nice -n 19"
+      commands << "mpirun"
+      commands << "-np #{@options[:cpus]}"
+      commands << "Ray"
+      commands << "-o " + File.join(dir_ray, "Ray")
+      commands << "-k #{kmer}"
+      commands << type
+      commands << @sequence_file
+
+      execute(commands)
+
+      kmer += 2
+    end
+  end
+
+  def pick_best_assembly
+    list = []
+
+    Dir.glob("#{@directory}/Kmer_*/*.fasta").each do |file|
+      n50 = fasta_n50(file)
+      list << [file, n50]
+    end
+
+    list.sort_by { |e| e.last }.last.first
+  end
+
+  private
+
+  def execute(commands)
+    commands.push "> /dev/null 2>&1" unless @options[:verbose]
+
+    command = commands.join(" ")
+
+    begin
+      system(command)
+      raise "Command failed: #{command}" unless $?.success?
+    rescue
+      $stderr.puts "Command failed: #{command}"
+    end
+  end
+
+  def fasta_n50(file)
+    total   = 0
+    lengths = []
+    count   = 0
+    n50     = 0
+
+    Fasta.open(file, "r") do |fasta_io|
+      fasta_io.each do |entry|
+        total   += entry.length
+        lengths << entry.length
+      end
+    end
+
+    lengths.sort.reverse.each do |length|
+      count += length
+
+      if count >= total * 0.50
+        n50 = length
+        break
+      end
+    end
+
+    n50
+  end
+end
+
+casts = []
+casts << {:long=>'directory',  :short=>'d', :type=>'dir',    :mandatory=>true,  :default=>nil,      :allowed=>nil,             :disallowed=>nil}
+casts << {:long=>'type',       :short=>'t', :type=>'string', :mandatory=>true,  :default=>'single', :allowed=>'single,paired', :disallowed=>nil}
+casts << {:long=>'cpus',       :short=>'c', :type=>'uint',   :mandatory=>true,  :default=>1,        :allowed=>nil,             :disallowed=>'0'}
+casts << {:long=>'kmer_min',   :short=>'k', :type=>'uint',   :mandatory=>true,  :default=>19,       :allowed=>nil,             :disallowed=>nil}
+casts << {:long=>'kmer_max',   :short=>'K', :type=>'uint',   :mandatory=>true,  :default=>31,       :allowed=>nil,             :disallowed=>nil}
+casts << {:long=>'clean',      :short=>'X', :type=>'flag',   :mandatory=>false, :default=>nil,      :allowed=>nil,             :disallowed=>nil}
+
+options = Biopieces.options_parse(ARGV, casts)
+
+raise ArgumentError, "kmer_min #{options[:kmer_min]} must be uneven." if options[:kmer_min].even?
+raise ArgumentError, "kmer_max #{options[:kmer_max]} must be uneven." if options[:kmer_max].even?
+raise ArgumentError, "kmer_min > kmer_max: #{options[:kmer_min]} > #{options[:kmer_max]}" if options[:kmer_min] > options[:kmer_max]
+
+Dir.mkdir(options[:directory]) unless Dir.exists?(options[:directory])
+
+file_fasta = File.join(options[:directory], "sequence_in.fasta")
+
+Biopieces.open(options[:stream_in], options[:stream_out]) do |input, output|
+	Fasta.open(file_fasta, "w") do |fasta_io|
+		input.each_record do |record|
+      if record[:SEQ_NAME] and record[:SEQ]
+        seq = Seq.new_bp(record)
+
+			  fasta_io.puts seq.to_fasta
+      end
+		end
+	end
+
+	unless File.size(file_fasta) == 0
+		ray = Ray.new(options[:directory], file_fasta, options)
+		ray.run
+		file_contigs = ray.pick_best_assembly
+
+		Fasta.open(file_contigs, "r") do |fasta_io|
+			fasta_io.each do |entry|
+				output.puts entry.to_bp
+			end
+		end
+	end
+end
+
+FileUtils.remove_entry_secure file_fasta
+FileUtils.remove_entry_secure options[:directory] if options[:clean]
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+__END__

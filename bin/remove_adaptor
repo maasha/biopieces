@@ -1,0 +1,122 @@
+#!/usr/bin/env perl
+
+# Copyright (C) 2007-2009 Martin A. Hansen.
+
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+
+# http://www.gnu.org/copyleft/gpl.html
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> DESCRIPTION <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# Locates and removes a specified adaptor sequence from sequences in stream.
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+use warnings;
+use strict;
+use Maasha::Biopieces;
+use Maasha::Common;
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+my ( $options, $in, $out, $record, $adaptor, $seq, $adaptor_len,
+     $seq_len, $offset, $max_match, $max_mismatch, $pos );
+
+$options = Maasha::Biopieces::parse_options(
+    [
+        { long => 'adaptor',    short => 'a', type => 'string', mandatory => 'yes', default => undef,   allowed => undef,               disallowed => undef },
+        { long => 'mismatches', short => 'm', type => 'uint',   mandatory => 'no',  default => 0,       allowed => undef,               disallowed => undef },
+        { long => 'offset',     short => 'o', type => 'uint',   mandatory => 'no',  default => 1,       allowed => undef,               disallowed => 0 },
+        { long => 'remove',     short => 'r', type => 'string', mandatory => 'no',  default => 'after', allowed => 'before,after,skip', disallowed => undef },
+    ]   
+);
+
+$in  = Maasha::Biopieces::read_stream( $options->{ "stream_in" } );
+$out = Maasha::Biopieces::write_stream( $options->{ "stream_out" } );
+
+$max_mismatch = $options->{ "mismatches" };
+$offset       = $options->{ "offset" };
+
+if ( not defined $offset ) {
+    $offset = 0;
+} else {
+    $offset--;
+}
+
+$adaptor     = uc $options->{ "adaptor" };
+$adaptor_len = length $adaptor;
+
+while ( $record = Maasha::Biopieces::get_record( $in ) ) 
+{
+    if ( $record->{ "SEQ" } )
+    {
+        $seq     = uc $record->{ "SEQ" };
+        $seq_len = length $seq;
+
+        $pos = Maasha::Common::index_m( $seq, $adaptor, $seq_len, $adaptor_len, $offset, $max_mismatch );
+
+        $record->{ "ADAPTOR_POS" } = $pos;
+
+        if ( $pos >= 0 and $options->{ "remove" } ne "skip" )
+        {
+            if ( $options->{ "remove" } eq "after" )
+            {
+                $record->{ "SEQ" }     = substr $record->{ "SEQ" },    0, $pos;
+                $record->{ "SCORES" }  = substr $record->{ "SCORES" }, 0, $pos if $record->{ "SCORES" };
+                $record->{ "SEQ_LEN" } = $pos;
+            }
+            else
+            {
+                $record->{ "SEQ" }     = substr $record->{ "SEQ" },    $pos + $adaptor_len;
+                $record->{ "SCORES" }  = substr $record->{ "SCORES" }, $pos + $adaptor_len if $record->{ "SCORES" };
+                $record->{ "SEQ_LEN" } = length $record->{ "SEQ" };
+            }
+        }
+
+        Maasha::Biopieces::put_record( $record, $out );
+    }
+    else
+    {
+        Maasha::Biopieces::put_record( $record, $out );
+    }
+}
+
+Maasha::Biopieces::close_stream( $in );
+Maasha::Biopieces::close_stream( $out );
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+BEGIN
+{
+    Maasha::Biopieces::status_set();
+}
+
+
+END
+{
+    Maasha::Biopieces::status_log();
+}
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+__END__

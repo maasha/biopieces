@@ -1,0 +1,165 @@
+#!/usr/bin/env ruby
+
+# Copyright (C) 2007-2012 Martin A. Hansen.
+
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+
+# http://www.gnu.org/copyleft/gpl.html
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# Plot the nucleotide distribution in percent of sequences in the stream.
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+require 'maasha/biopieces'
+require 'gnuplot'
+require 'narray'
+require 'pp'
+
+VEC_MAX   = 10_000
+Y_MAX     = 100
+
+terminals = "dumb,x11,aqua,post,pdf,png,svg"
+title     = "Nucleotide Distribution"
+xlabel    = "Sequence position"
+ylabel    = "Nucleotide distribution (%)"
+
+casts = []
+casts << {:long=>'no_stream', :short=>'x', :type=>'flag',   :mandatory=>false, :default=>nil,    :allowed=>nil,       :disallowed=>nil}
+casts << {:long=>'count',     :short=>'c', :type=>'flag',   :mandatory=>false, :default=>nil,    :allowed=>nil,       :disallowed=>nil}
+casts << {:long=>'data_out',  :short=>'o', :type=>'file',   :mandatory=>false, :default=>nil,    :allowed=>nil,       :disallowed=>nil}
+casts << {:long=>'terminal',  :short=>'t', :type=>'string', :mandatory=>false, :default=>'dumb', :allowed=>terminals, :disallowed=>nil}
+casts << {:long=>'title',     :short=>'T', :type=>'string', :mandatory=>false, :default=>title,  :allowed=>nil,       :disallowed=>nil}
+casts << {:long=>'xlabel',    :short=>'X', :type=>'string', :mandatory=>false, :default=>xlabel, :allowed=>nil,       :disallowed=>nil}
+casts << {:long=>'ylabel',    :short=>'Y', :type=>'string', :mandatory=>false, :default=>ylabel, :allowed=>nil,       :disallowed=>nil}
+
+options = Biopieces.options_parse(ARGV, casts)
+
+max_len = 0 
+
+vec_a   = NArray.int(VEC_MAX)
+vec_t   = NArray.int(VEC_MAX)
+vec_c   = NArray.int(VEC_MAX)
+vec_g   = NArray.int(VEC_MAX)
+vec_n   = NArray.int(VEC_MAX)
+vec_tot = NArray.float(VEC_MAX)
+
+Biopieces.open(options[:stream_in], options[:stream_out]) do |input, output|
+  input.each_record do |record|
+    if record[:SEQ]
+      seq = record[:SEQ].upcase
+
+      unless seq.empty?
+        raise BiopiecesError, "sequence too long: #{seq.length} > #{VEC_MAX}" if seq.length > VEC_MAX
+
+        vec_seq = NArray.to_na(seq, "byte")
+
+        vec_a[0 ... seq.length]   += vec_seq.eq('A'.ord)
+        vec_t[0 ... seq.length]   += vec_seq.eq('T'.ord)
+        vec_c[0 ... seq.length]   += vec_seq.eq('C'.ord)
+        vec_g[0 ... seq.length]   += vec_seq.eq('G'.ord)
+        vec_n[0 ... seq.length]   += vec_seq.eq('N'.ord)
+        vec_tot[0 ... seq.length] += 1
+
+        max_len = seq.length if seq.length > max_len
+      end
+    end
+
+    output.puts record unless options[:no_stream]
+  end
+end
+
+if max_len > 0
+  x = (1 .. max_len).to_a
+  a = ((vec_a / vec_tot) * 100)[0 ... max_len].to_a
+  t = ((vec_t / vec_tot) * 100)[0 ... max_len].to_a
+  c = ((vec_c / vec_tot) * 100)[0 ... max_len].to_a
+  g = ((vec_g / vec_tot) * 100)[0 ... max_len].to_a
+  n = ((vec_n / vec_tot) * 100)[0 ... max_len].to_a
+
+  vec_tot *= (Y_MAX / vec_tot.max(0).to_f)
+  y = vec_tot.to_a
+
+  a.unshift 0.0
+  t.unshift 0.0
+  c.unshift 0.0
+  g.unshift 0.0
+  n.unshift 0.0
+
+  Gnuplot.open do |gp|
+    Gnuplot::Plot.new(gp) do |plot|
+      plot.terminal options[:terminal]
+      plot.title    options[:title]
+      plot.xlabel   options[:xlabel]
+      plot.ylabel   options[:ylabel]
+      plot.output   options[:data_out] || "/dev/stderr"
+      plot.ytics    "out"
+      plot.xtics    "out"
+      plot.yrange   "[0:#{Y_MAX}]"
+      plot.xrange   "[0:#{max_len}]"
+      plot.auto     "fix"
+      plot.offsets  "1"
+      plot.key      "outside right top vertical Left reverse enhanced autotitles columnhead nobox"
+      plot.key      "invert samplen 4 spacing 1 width 0 height 0"
+      plot.style    "fill solid 0.5 border"
+      plot.style    "histogram rowstacked"
+      plot.style    "data histograms"
+      plot.boxwidth "0.75 absolute"
+
+      plot.data << Gnuplot::DataSet.new(n) do |ds|
+        ds.using = "1"
+        ds.with  = "histogram lt rgb \"black\""
+        ds.title = "N"
+      end
+
+      plot.data << Gnuplot::DataSet.new(g) do |ds|
+        ds.using = "1"
+        ds.with  = "histogram lt rgb \"yellow\""
+        ds.title = "G"
+      end
+
+      plot.data << Gnuplot::DataSet.new(c) do |ds|
+        ds.using = "1"
+        ds.with  = "histogram lt rgb \"blue\""
+        ds.title = "C"
+      end
+
+      plot.data << Gnuplot::DataSet.new(t) do |ds|
+        ds.using = "1"
+        ds.with  = "histogram lt rgb \"green\""
+        ds.title = "T"
+      end
+
+      plot.data << Gnuplot::DataSet.new(a) do |ds|
+        ds.using = "1"
+        ds.with  = "histogram lt rgb \"red\""
+        ds.title = "A"
+      end
+
+      if options[:count]
+        plot.data << Gnuplot::DataSet.new([x, y]) do |ds|
+          ds.with  = "lines lt rgb \"black\""
+          ds.title = "count"
+        end
+      end
+    end
+  end
+end
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+__END__

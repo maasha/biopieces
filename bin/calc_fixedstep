@@ -1,0 +1,120 @@
+#!/usr/bin/env perl
+
+# Copyright (C) 2007-2010 Martin A. Hansen.
+
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+
+# http://www.gnu.org/copyleft/gpl.html
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> DESCRIPTION <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# Calculate fixedstep entries from records in the stream.
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+use warnings;
+use strict;
+use Maasha::Biopieces;
+use Maasha::Filesys;
+use Maasha::UCSC::BED;
+use Maasha::UCSC::Wiggle;
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+my ( $options, $in, $out, $record, $tmp_dir, $bed_file, $fh_in, $fh_out,
+     $file_hash, $chr, $bed_entry, $fixedstep_file, $fixedstep_entry );
+
+$options = Maasha::Biopieces::parse_options(
+    [
+        { long => 'check', short => 'C', type => 'flag', mandatory => 'no', default => undef, allowed => undef, disallowed => undef },
+        { long => 'log10', short => 'l', type => 'flag', mandatory => 'no', default => undef, allowed => undef, disallowed => undef },
+    ]   
+);
+
+$in  = Maasha::Biopieces::read_stream( $options->{ "stream_in" } );
+$out = Maasha::Biopieces::write_stream( $options->{ "stream_out" } );
+
+$tmp_dir = Maasha::Biopieces::get_tmpdir();
+
+$bed_file = "$tmp_dir/calc_fixedstep.bed";
+$fh_out   = Maasha::Filesys::file_write_open( $bed_file );
+
+while ( $record = Maasha::Biopieces::get_record( $in ) ) 
+{
+    if ( $bed_entry = Maasha::UCSC::BED::biopiece2bed( $record ) ) {
+        Maasha::UCSC::BED::bed_entry_put( $bed_entry, $fh_out, undef, $options->{ 'check' } );
+    }
+
+    Maasha::Biopieces::put_record( $record, $out );
+}
+
+close $fh_out;
+
+$file_hash = Maasha::UCSC::BED::bed_file_split_on_chr( $bed_file, $tmp_dir );
+
+unlink $bed_file;
+
+foreach $chr ( sort keys %{ $file_hash } )
+{
+    $bed_file       = $file_hash->{ $chr };
+
+    $fixedstep_file = Maasha::UCSC::Wiggle::fixedstep_calc( $bed_file, $chr, $options->{ 'log10' } );        
+
+    #$fixedstep_file = "$bed_file.fixedstep";
+    
+    # Maasha::Common::run( "bed2fixedstep", "< $bed_file > $fixedstep_file" );
+
+    $fh_in = Maasha::Filesys::file_read_open( $fixedstep_file );
+
+    while ( $fixedstep_entry = Maasha::UCSC::Wiggle::fixedstep_entry_get( $fh_in ) )
+    {
+        if ( $record = Maasha::UCSC::Wiggle::fixedstep2biopiece( $fixedstep_entry ) ) {
+            Maasha::Biopieces::put_record( $record, $out );
+        }
+    }
+
+    close $fh_in;
+
+    unlink $bed_file;
+    unlink $fixedstep_file;
+}
+
+Maasha::Biopieces::close_stream( $in );
+Maasha::Biopieces::close_stream( $out );
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+BEGIN
+{
+    Maasha::Biopieces::status_set();
+}
+
+
+END
+{
+    Maasha::Biopieces::status_log();
+}
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+__END__

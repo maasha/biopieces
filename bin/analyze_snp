@@ -1,0 +1,132 @@
+#!/usr/bin/env perl
+
+# Copyright (C) 2007-2009 Martin A. Hansen.
+
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+
+# http://www.gnu.org/copyleft/gpl.html
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> DESCRIPTION <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+# Analyze mismatches and indels from ALIGN descriptors in the stream.
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+use warnings;
+use strict;
+use Maasha::Biopieces;
+use Data::Dumper;
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+my ( $options, $in, $out, $record, @aligns, $align, $offset, $src, $dst, $data, $s_id, $pos, $count, $new_record );
+
+
+$options = Maasha::Biopieces::parse_options(
+    [
+        { long => 'min', short => 'm', type => 'uint', mandatory => 'no', default => 1, allowed => undef, disallowed => '0' },
+    ]
+);
+
+$in  = Maasha::Biopieces::read_stream( $options->{ "stream_in" } );
+$out = Maasha::Biopieces::write_stream( $options->{ "stream_out" } );
+
+$data = {};
+
+while ( $record = Maasha::Biopieces::get_record( $in ) ) 
+{
+    if ( exists $record->{ 'ALIGN' } )
+    {
+        @aligns = split /,/, $record->{ 'ALIGN' };
+
+        foreach $align ( @aligns )
+        {
+            if ( $align =~ /(\d+):([ATCGN-])>([ATCGN-])/ )
+            {
+                $offset = $1;
+                $src    = $2;
+                $dst    = $3;
+
+                $data->{ $record->{ 'S_ID' } }->{ $record->{ 'S_BEG' } + $offset }->{ $src }->{ $dst }++;
+            }
+        }
+    }
+
+    Maasha::Biopieces::put_record( $record, $out );
+}
+
+foreach $s_id ( sort keys %{ $data } )
+{
+    foreach $pos ( sort { $a <=> $b } keys %{ $data->{ $s_id } } )
+    {
+        foreach $src ( sort keys %{ $data->{ $s_id }->{ $pos } } )
+        {
+            foreach $dst ( sort keys %{ $data->{ $s_id }->{ $pos }->{ $src } } )
+            {
+                $count = $data->{ $s_id }->{ $pos }->{ $src }->{ $dst };
+
+                if ( $count >= $options->{ 'min' } )
+                {
+                    $new_record->{ 'REC_TYPE' }  = "SNP";
+                    $new_record->{ 'S_ID' }      = $s_id;
+                    $new_record->{ 'S_POS' }     = $pos;
+                    $new_record->{ 'SRC' }       = $src;
+                    $new_record->{ 'DST' }       = $dst;
+                    $new_record->{ 'SNP_COUNT' } = $count;
+
+                    if ( $src eq '-' ) {
+                        $new_record->{ 'TYPE' } = "INSERTION";
+                    } elsif ( $dst eq '-' ) {
+                        $new_record->{ 'TYPE' } = "DELETION";
+                    } else {
+                        $new_record->{ 'TYPE' } = "MISMATCH";
+                    }
+
+                    Maasha::Biopieces::put_record( $new_record, $out );
+                }
+            }
+        }
+    }
+}
+
+Maasha::Biopieces::close_stream( $in );
+Maasha::Biopieces::close_stream( $out );
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+BEGIN
+{
+    Maasha::Biopieces::status_set();
+}
+
+
+END
+{
+    Maasha::Biopieces::status_log();
+}
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+__END__

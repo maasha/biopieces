@@ -1,0 +1,143 @@
+#!/usr/bin/env perl
+
+# Copyright (C) 2007-2009 Martin A. Hansen.
+
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+
+# http://www.gnu.org/copyleft/gpl.html
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> DESCRIPTION <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# Write tabular BLAST output from the stream.
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+use warnings;
+use strict;
+use Maasha::Fasta;
+use Maasha::Biopieces;
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+my ( $options, $in, $out, $record, $first, $entry, $data_out );
+
+$options = Maasha::Biopieces::parse_options(
+    [
+        { long => 'no_stream', short => 'x', type => 'flag', mandatory => 'no', default => undef, allowed => undef, disallowed => undef },
+        { long => 'data_out',  short => 'o', type => 'file', mandatory => 'no', default => undef, allowed => undef, disallowed => undef },
+        { long => 'comment',   short => 'c', type => 'flag', mandatory => 'no', default => undef, allowed => undef, disallowed => undef },
+        { long => 'compress',  short => 'Z', type => 'flag', mandatory => 'no', default => undef, allowed => undef, disallowed => undef },
+    ]   
+);
+
+$in       = Maasha::Biopieces::read_stream( $options->{ "stream_in" } );
+$out      = Maasha::Biopieces::write_stream( $options->{ "stream_out" } );
+$data_out = Maasha::Biopieces::write_stream( $options->{ "data_out" }, $options->{ "compress" } ) ;
+
+$first = 1;
+
+while ( $record = Maasha::Biopieces::get_record( $in ) ) 
+{
+    if ( $entry = biopiece2blast_tab( $record ) )
+    {
+        if ( $options->{ "comment" } and $first )
+        {
+            print $data_out "# Fields: Query id, Subject id, % identity, alignment length, mismatches, gap openings, q. start, q. end, s. start, s. end, e-value, bit score\n";
+
+            $first = 0;
+        }
+
+        print $data_out join( "\t", @{ $entry } ), "\n";
+    }
+
+    Maasha::Biopieces::put_record( $record, $out ) if not $options->{ "no_stream" };
+}
+
+close $data_out;
+
+Maasha::Biopieces::close_stream( $in );
+Maasha::Biopieces::close_stream( $out );
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> SUBROUTINES <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+sub biopiece2blast_tab
+{
+    # Martin A. Hansen, May 2009.
+
+    # Convert a Biopiece record to a BLAST tabular entry.
+    # Note that we correct positions because BLAST is 1-based.
+
+    my ( $record,   # hashref
+       ) = @_;
+
+    # Returns a list.
+
+    my ( @fields, $s_beg, $s_end );
+
+    return undef if not defined $record->{ 'REC_TYPE' } or not $record->{ 'REC_TYPE' } eq "BLAST";
+
+    if ( $record->{ "STRAND" } eq '+' )
+    {
+        $s_beg = $record->{ "S_BEG" };
+        $s_end = $record->{ "S_END" };
+    }
+    else
+    {
+        $s_beg = $record->{ "S_END" };
+        $s_end = $record->{ "S_BEG" };
+    }
+
+    $fields[ 0 ]  = $record->{ "Q_ID" };
+    $fields[ 1 ]  = $record->{ "S_ID" };
+    $fields[ 2 ]  = $record->{ "IDENT" };
+    $fields[ 3 ]  = $record->{ "ALIGN_LEN" };
+    $fields[ 4 ]  = $record->{ "MISMATCHES" };
+    $fields[ 5 ]  = $record->{ "GAPS" };
+    $fields[ 6 ]  = $record->{ "Q_BEG" } + 1;
+    $fields[ 7 ]  = $record->{ "Q_END" } + 1;
+    $fields[ 8 ]  = $s_beg + 1;
+    $fields[ 9 ]  = $s_end + 1;
+    $fields[ 10 ] = $record->{ "E_VAL" };
+    $fields[ 11 ] = $record->{ "BIT_SCORE" };
+
+    return wantarray ? @fields : \@fields;
+}
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+BEGIN
+{
+    Maasha::Biopieces::status_set();
+}
+
+
+END
+{
+    Maasha::Biopieces::status_log();
+}
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+__END__

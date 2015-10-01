@@ -1,0 +1,80 @@
+#!/usr/bin/env ruby
+
+# Copyright (C) 2007-2010 Martin A. Hansen.
+
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+
+# http://www.gnu.org/copyleft/gpl.html
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# This program is part of the Biopieces framework (www.biopieces.org).
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> DESCRIPTION <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# Read Genbank entries from one or more files.
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+require 'maasha/biopieces'
+require 'maasha/genbank'
+
+casts = []
+casts << {:long=>'data_in',    :short=>'i', :type=>'files!', :mandatory=>false, :default=>nil, :allowed=>nil, :disallowed=>nil}
+casts << {:long=>'num',        :short=>'n', :type=>'uint',   :mandatory=>false, :default=>nil, :allowed=>nil, :disallowed=>'0'}
+casts << {:long=>'keys',       :short=>'k', :type=>'list',   :mandatory=>false, :default=>nil, :allowed=>nil, :disallowed=>nil}
+casts << {:long=>'features',   :short=>'f', :type=>'list',   :mandatory=>false, :default=>nil, :allowed=>nil, :disallowed=>nil}
+casts << {:long=>'qualifiers', :short=>'q', :type=>'list',   :mandatory=>false, :default=>nil, :allowed=>nil, :disallowed=>nil}
+
+options = Biopieces.options_parse(ARGV, casts)
+
+hash_keys  = options[:keys].inject(Hash.new)       { |h,k| h[k.upcase.to_sym] = true; h } if options[:keys]
+hash_feats = options[:features].inject(Hash.new)   { |h,k| h[k.upcase.to_sym] = true; h } if options[:features]
+hash_quals = options[:qualifiers].inject(Hash.new) { |h,k| h[k.upcase.to_sym] = true; h } if options[:qualifiers]
+
+
+Biopieces.open(options[:stream_in], options[:stream_out]) do |input, output|
+  input.each_record do |record|
+    output.puts record
+  end
+
+  num  = 0
+  last = false
+
+  if options[:data_in]
+    options[:data_in].each do |file|
+      Genbank.open(file, 'r') do |gb|
+        gb.each(hash_keys, hash_feats, hash_quals) do |entry|
+          output.puts entry
+
+          num += 1
+
+          if options[:num] and options[:num] == num
+            last = true
+            break
+          end
+        end
+      end
+
+      break if last
+    end
+  end
+end
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+__END__

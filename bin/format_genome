@@ -1,0 +1,151 @@
+#!/usr/bin/env perl
+
+# Copyright (C) 2007-2009 Martin A. Hansen.
+
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+
+# http://www.gnu.org/copyleft/gpl.html
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> DESCRIPTION <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# Format a genome creating specified indexes.
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+use warnings;
+use strict;
+use Maasha::Fasta;
+use Maasha::Biopieces;
+use Maasha::Bowtie;
+use Maasha::BWA;
+use Maasha::NCBI;
+use Maasha::Match;
+use Maasha::UCSC;
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+my ( $default, $formats, $options, $in, $out, $record, $data_out, $entry,
+     $genome, $dir, $fasta_dir, $phastcons_dir, $fh_out, $vals, $format, $tmp_dir );
+
+$tmp_dir = Maasha::Biopieces::get_tmpdir();
+$default = $ENV{ 'BP_DATA' };
+$formats = 'fasta,blast,vmatch,bowtie,bwa,phastcons';
+
+$options = Maasha::Biopieces::parse_options(
+    [
+        { long => 'no_stream', short => 'x', type => 'flag',   mandatory => 'no',  default => undef,    allowed => undef,    disallowed => undef },
+        { long => 'dir',       short => 'd', type => 'dir!',   mandatory => 'no',  default => $default, allowed => undef,    disallowed => undef },
+        { long => 'genome',    short => 'g', type => 'string', mandatory => 'yes', default => undef,    allowed => undef,    disallowed => undef },
+        { long => 'formats',   short => 'f', type => 'list',   mandatory => 'yes', default => undef,    allowed => $formats, disallowed => '0' },
+    ]   
+);
+
+$in  = Maasha::Biopieces::read_stream( $options->{ "stream_in" } );
+$out = Maasha::Biopieces::write_stream( $options->{ "stream_out" } );
+
+$dir    = $options->{ 'dir' };
+$genome = $options->{ 'genome' };
+
+Maasha::Filesys::dir_create_if_not_exists( "$dir/genomes" );
+Maasha::Filesys::dir_create_if_not_exists( "$dir/genomes/$genome" );
+
+if ( grep { $_ =~ /fasta|blast|vmatch|bowtie|bwa/i } @{ $options->{ "formats" } } )
+{
+    if ( -f "$dir/genomes/$genome/fasta/$genome.fna" )
+    {
+        $fasta_dir = "$dir/genomes/$genome/fasta";
+    }
+    else
+    {
+        Maasha::Filesys::dir_create_if_not_exists( "$dir/genomes/$genome/fasta" );
+
+        $fasta_dir = "$dir/genomes/$genome/fasta";
+
+        $fh_out = Maasha::Filesys::file_write_open( "$fasta_dir/$genome.fna" );
+    }
+}
+elsif ( grep { $_ =~ /phastcons/i } @{ $options->{ "formats" } } )
+{
+    Maasha::Filesys::dir_create_if_not_exists( "$dir/genomes/$genome/phastcons" );
+
+    $phastcons_dir = "$dir/genomes/$genome/phastcons";
+
+    $fh_out = Maasha::Filesys::file_write_open( "$phastcons_dir/$genome.pp" );
+}
+
+while ( $record = Maasha::Biopieces::get_record( $in ) ) 
+{
+    if ( $fh_out and $entry = Maasha::Fasta::biopiece2fasta( $record ) )
+    {
+        Maasha::Fasta::put_entry( $entry, $fh_out );
+    }
+    elsif ( $fh_out and $record->{ "CHR" } and $record->{ "CHR_BEG" } and $record->{ "STEP" } and $record->{ "VALS" } )  # TODO: clean this!
+    {
+        print $fh_out "fixedStep chrom=$record->{ 'CHR' } start=$record->{ 'CHR_BEG' } step=$record->{ 'STEP' }\n";
+
+        $vals = $record->{ 'VALS' };
+
+        $vals =~ tr/,/\n/;
+
+        print $fh_out "$vals\n";
+    }
+
+    Maasha::Biopieces::put_record( $record, $out ) if not $options->{ "no_stream" };
+}
+
+close $fh_out if $fh_out;
+
+foreach $format ( @{ $options->{ 'formats' } } )
+{
+    print STDERR qq(Creating format: $format for $genome ... ) if $options->{ 'verbose' };
+
+    if    ( $format =~ /^fasta$/i )     { Maasha::Fasta::fasta_index( "$fasta_dir/$genome.fna", $fasta_dir, "$genome.index" ) }
+    elsif ( $format =~ /^blast$/i )     { Maasha::NCBI::blast_index( "$genome.fna", $fasta_dir, "$dir/genomes/$genome/blast", "dna", $genome ) }
+    elsif ( $format =~ /^blat$/i )      { warn "BLAT FORMAT NOT IMPLEMENTED\n" }
+    elsif ( $format =~ /^vmatch$/i )    { Maasha::Match::vmatch_index( "$genome.fna", $fasta_dir, "$dir/genomes/$genome/vmatch", $tmp_dir ) }
+    elsif ( $format =~ /^bowtie$/i )    { Maasha::Bowtie::bowtie_index( "$fasta_dir/$genome.fna", "$dir/genomes/$genome/bowtie", $genome, $options->{ 'verbose' } ) }
+    elsif ( $format =~ /^bwa$/i )       { Maasha::BWA::bwa_index( "$fasta_dir/$genome.fna", "$dir/genomes/$genome/bwa", $genome, $options->{ 'verbose' } ) }
+    elsif ( $format =~ /^phastcons$/i ) { Maasha::UCSC::phastcons_index( "$genome.pp", $phastcons_dir ) }
+
+    print STDERR qq(done.\n) if $options->{ 'verbose' };
+}
+
+Maasha::Biopieces::close_stream( $in );
+Maasha::Biopieces::close_stream( $out );
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+BEGIN
+{
+    Maasha::Biopieces::status_set();
+}
+
+
+END
+{
+    Maasha::Biopieces::status_log();
+}
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+__END__

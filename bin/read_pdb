@@ -1,0 +1,254 @@
+#!/usr/bin/env ruby
+
+# Copyright (C) 2014 Lukas Astalos.
+
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+
+# http://www.gnu.org/copyleft/gpl.html
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# This program is part of the Biopieces framework (www.biopieces.org).
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> DESCRIPTION <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# Read PDB entries from one or more files and convert sequences to FASTA format.
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+require 'maasha/biopieces'
+require 'lastalos/pdb'
+
+allowed_methods = 'atom,seqres'
+
+casts = []
+casts << {:long=>'data_in',      :short=>'i', :type=>'files!', :mandatory=>false, :default=>nil,      :allowed=>nil,             :disallowed=>nil}
+casts << {:long=>'data_out',     :short=>'o', :type=>'file',   :mandatory=>false, :default=>nil,      :allowed=>nil,             :disallowed=>nil}
+casts << {:long=>'method',       :short=>'m', :type=>'string', :mandatory=>false, :default=>'seqres', :allowed=>allowed_methods, :disallowed=>nil}
+casts << {:long=>'missing',      :short=>'M', :type=>'flag',   :mandatory=>false, :default=>nil,      :allowed=>nil,             :disallowed=>nil}
+casts << {:long=>'record',       :short=>'c', :type=>'list',   :mandatory=>false, :default=>nil,      :allowed=>nil,             :disallowed=>nil}
+casts << {:long=>'atom_name',    :short=>'a', :type=>'list',   :mandatory=>false, :default=>nil,      :allowed=>nil,             :disallowed=>nil}
+casts << {:long=>'residue_name', :short=>'r', :type=>'list',   :mandatory=>false, :default=>nil,      :allowed=>nil,             :disallowed=>nil}
+
+
+options = Biopieces.options_parse(ARGV, casts)
+raise "\"--missing\" option is allowed only if \"--method=atom\" is set" if (options[:method] == "seqres") and (options[:missing])
+# I/O handling
+files = []
+unless options[:data_in]
+	if options[:stream_in]	# -I option
+		raise ArgumentError, "Input is not a valid PDB file" if not `file -L #{options[:stream_in]}` =~ /Protein Data Bank/
+		lines = File.readlines(options[:stream_in])
+	else	# STDIN
+		lines = ARGF.readlines
+	end
+	files << lines
+else	# -i option	
+	options[:data_in].each do |file|
+		# raise ArgumentError, "#{file} is not a valid PDB file" if not `file -L #{file}` =~ /Protein Data Bank/        
+		lines = File.readlines(file)
+		files << lines		
+	end
+end
+
+unless options[:data_out]
+	if options[:stream_out]	# -O option
+		pdb_out = File.open(options[:stream_out], 'w')
+	else
+		pdb_out = STDOUT
+	end
+else	# -o option
+	pdb_out = File.open(options[:data_out], 'w')
+end
+
+files.each do |f|
+	idcode = f[0][HEADER_IDCODE_START..HEADER_IDCODE_END].upcase
+
+	# ATOM coordinates filtering
+	atom_coord = f.find_all { |line| line.strip! =~ /(^ATOM)|(^HETATM)/ }	
+	if options[:record]		
+		atom_coord.delete_if { |line| not options[:record].include?(line[RECNAME_START..RECNAME_END].strip.downcase) }
+	end
+	if options[:atom_name]
+		atom_coord.delete_if { |line| not options[:atom_name].include?(line[ATOM_ATMNAME_START..ATOM_ATMNAME_END].strip) }
+	end
+	if options[:residue_name]
+		atom_coord.delete_if { |line| not options[:residue_name].include?(line[ATOM_RESNAME_START..ATOM_RESNAME_END].strip) }
+	end	
+	atom_coord = atom_coord.group_by { |line| line[ATOM_CHAIN_ID] }
+
+
+	if options[:method] == "atom"
+		
+		alphacarbons = f.find_all { |line| line =~ /^ATOM +[[:digit:]]+ +CA/i }
+		if alphacarbons.empty?
+			pdb_out.close
+			raise "atom method not possible. #{options[:data_in]}#{options[:stream_in]} : No ATOM records with CA atom found. \
+Try --method=seqres instead of --method=atom" 
+		end
+		
+		ac_chains = alphacarbons.group_by { |line| line[ATOM_CHAIN_ID] } #chain identifier is at index 21
+
+		if options[:missing]
+			# find missing residues if any		
+			missing = f.find_all { |line| line =~ /^REMARK 465 +([[:alpha:]]|[[:digit:]]){1,3} *([[:alpha:]]|[[:digit:]]) +-?[[:digit:]]+[[:alpha:]]?/ }
+			no_missing_residues = false
+			if not missing.empty?
+				missing = normalize(missing) 
+			else
+				no_missing_residues = true
+			end
+
+			ac_chains.sort.map do |chain,records|	# handle chains in alphabetical order	
+				line = ""	
+				previous_resseq = -1
+				resseq = records[0][ATOM_RESSEQ_START..ATOM_RESSEQ_END].to_i
+				seq = resseq
+				if not missing.empty?
+					misseq = []
+					missing.keys.each do |k|
+						misseq << k.gsub(/^[[:alpha:]]|[[:digit:]] +/,'').to_i if k[0] == chain
+					end
+					if not misseq.empty? 
+						seq = misseq.min if misseq.min < resseq
+					end
+				end					
+				
+				records.each do |record|		
+					resseq = record[ATOM_RESSEQ_START..ATOM_RESSEQ_END].to_i
+					# if Code for insertion of residues is non-blank, use all records in group with same sequence number
+					if is_letter?(record[ATOM_ICODE])		
+						seq -= 1 if resseq == previous_resseq
+					end
+
+					if seq <= resseq # more than 1 model, repeating sequence
+						if resseq != seq	# gap in records, tries to reconstruct from missing residues records				
+							while seq < resseq
+								if no_missing_residues	# no missing residues records exist
+									line += "X"									
+								else 
+									unless missing.empty?  		
+										matched_keys = []
+										missing.keys.each do |k|
+											matched_keys << k if (k[0] == chain) and (k.gsub(/^[[:alpha:]]|[[:digit:]] /,'').to_i == seq)
+										end
+										if not matched_keys.empty?  			
+											matched_keys.each do |k|								
+												line += convert_acid(missing[k])
+												missing.delete(k)																																			
+											end
+										else	# missing record in missing residues
+											line += "X"											
+										end
+									end
+								end
+								seq += 1 
+							end  # of while seq < resseq
+						end	 # of if resseq != seq
+							
+						if is_letter?(record[ATOM_ALTLOC]) # take only the first record of group if Alternate location indicator is non-blank
+							next if resseq == previous_resseq
+						end	
+														
+						line += convert_acid(record[ATOM_RESNAME_START..ATOM_RESNAME_END])							
+
+						unless missing.empty?  # there might be another records with same residue sequence number 
+											   # in missing residues list if Code for insertion of residues	is present
+							matched_keys = []
+							missing.keys.each do |k|
+								matched_keys << k if (k[0] == chain) and (k.gsub(/^[[:alpha:]]|[[:digit:]] /,'').to_i == seq)
+							end			
+							if not matched_keys.empty?  			
+								matched_keys.each do |k|								
+									line += convert_acid(missing[k])
+									missing.delete(k)																																		
+								end
+							end
+						end						
+						
+						seq += 1
+						previous_resseq = resseq
+					end	# of if seq <= resseq		
+				end # of records.each do |record|
+				
+				if not missing.empty?	# missing residues with seq number greater than the last record in chain
+					missing.keys.each do |k|
+						if k[0] == chain
+							line += convert_acid(missing[k])
+							missing.delete(k)
+						end
+					end
+				end
+				atom_coord[chain] = [] if atom_coord[chain].nil?
+				entry = Pdb.new_pdb(idcode,line,chain,atom_coord[chain].join('; '))
+				pdb_out.puts entry.to_pdb
+			end  # of ac_chains.sort.map do |chain,records|
+
+		else	# do not solve missing residues --missing/-M
+			ac_chains.sort.map do |chain,records|	# handle chains in alphabetical order	
+				line = ""	
+				previous_resseq = -1				
+				records.each do |record|		
+					resseq = record[ATOM_RESSEQ_START..ATOM_RESSEQ_END].to_i
+					if is_letter?(record[ATOM_ALTLOC]) # take only the first record of group if Alternate location indicator is present
+						next if resseq == previous_resseq
+					end	
+
+					line += convert_acid(record[ATOM_RESNAME_START..ATOM_RESNAME_END])																
+					
+					previous_resseq = resseq
+				end
+				atom_coord[chain] = [] if atom_coord[chain].nil?
+				entry = Pdb.new_pdb(idcode,line,chain,atom_coord[chain].join('; '))
+				pdb_out.puts entry.to_pdb
+			end
+		end  # --missing/-M flag
+
+	else # options[:method] == "seqres"
+		seqres = f.find_all { |line| line =~ /^SEQRES/i }
+		if seqres.empty?
+			pdb_out.close
+			raise "Something goes wrong. #{[:data_in]}#{[:stream_in]} does not look like a standard PDB file: No SEQRES records found" 
+		end
+		chains = seqres.group_by { |line| line[SEQRES_CHAIN_ID] } # 11	
+
+		chains.sort.map do |chain,records|	# handle chains in alphabetical order	
+			line = ""			
+			records.each do |record|
+				i = SEQRES_RESIDUE1			
+				while i+2 <= record.strip.length-1				
+					acid = convert_acid(record[i..i+2].strip)				
+					if not acid.empty?
+						line += acid						
+					else
+						break
+					end			
+					i += 4	# begin of next residue name
+				end		
+			end	
+			atom_coord[chain] = [] if atom_coord[chain].nil?		
+			entry = Pdb.new_pdb(idcode,line,chain,atom_coord[chain].join('; '))
+			pdb_out.puts entry.to_pdb
+		end
+	end
+end # files.each do |f|
+
+pdb_out.close
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+__END__

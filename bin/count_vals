@@ -1,0 +1,131 @@
+#!/usr/bin/env perl
+
+# Copyright (C) 2007-2009 Martin A. Hansen.
+
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+
+# http://www.gnu.org/copyleft/gpl.html
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> DESCRIPTION <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# Count the number of times values of given keys exists in stream.
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+use warnings;
+use strict;
+use Maasha::Filesys;
+use Maasha::Biopieces;
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+my ( $options, $in, $out, $num, $record, %count_hash, @records, $tmp_dir, $tmp_file, $fh_out, $fh_in, $cache );
+
+$options = Maasha::Biopieces::parse_options(
+    [
+        { long => 'keys', short => 'k', type => 'list', mandatory => 'yes', default => undef, allowed => undef, disallowed => undef },
+    ]   
+);
+
+$in  = Maasha::Biopieces::read_stream( $options->{ "stream_in" } );
+$out = Maasha::Biopieces::write_stream( $options->{ "stream_out" } );
+
+$tmp_dir  = Maasha::Biopieces::get_tmpdir();
+
+$tmp_file = "$tmp_dir/count_cache.tmp";
+
+$fh_out   = Maasha::Filesys::file_write_open( $tmp_file );
+
+$cache    = 0;
+$num      = 0;
+
+while ( $record = Maasha::Biopieces::get_record( $in ) ) 
+{
+    map { $count_hash{ $_ }{ $record->{ $_ } }++ if exists $record->{ $_ } } @{ $options->{ "keys" } };
+
+    push @records, $record;
+
+    if ( scalar @records > 5_000_000 )   # too many records to hold in memory - use disk cache
+    {
+        map { Maasha::Biopieces::put_record( $_, $fh_out ) } @records;
+
+        undef @records;
+
+        $cache = 1;
+    }
+
+    print STDERR "verbose: records read $num\n" if ( $options->{ 'verbose' } and ( $num % 1_000_000 ) == 0 );
+
+    $num++;
+}
+
+close $fh_out;
+
+if ( $cache )
+{
+    $num   = 0;
+
+    $fh_in = Maasha::Common::read_open( $tmp_file );
+
+    while ( $record = Maasha::Biopieces::get_record( $fh_in ) )
+    {
+        map { $record->{ $_ . "_COUNT" } = $count_hash{ $_ }{ $record->{ $_ } } if exists $record->{ $_ } } @{ $options->{ "keys" } };
+
+        Maasha::Biopieces::put_record( $record, $out );
+
+        print STDERR "verbose: cache read $num\n" if ( $options->{ 'verbose' } and ( $num % 1_000_000 ) == 0 );
+
+        $num++;
+    }
+
+    close $fh_in;
+}
+
+foreach $record ( @records )
+{
+    map { $record->{ $_ . "_COUNT" } = $count_hash{ $_ }{ $record->{ $_ } } if exists $record->{ $_ } } @{ $options->{ "keys" } };
+
+    Maasha::Biopieces::put_record( $record, $out );
+}
+
+unlink $tmp_file;
+
+Maasha::Biopieces::close_stream( $in );
+Maasha::Biopieces::close_stream( $out );
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+BEGIN
+{
+    Maasha::Biopieces::status_set();
+}
+
+
+END
+{
+    Maasha::Biopieces::status_log();
+}
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+__END__

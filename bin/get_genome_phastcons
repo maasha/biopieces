@@ -1,0 +1,127 @@
+#!/usr/bin/env perl
+
+# Copyright (C) 2007-2009 Martin A. Hansen.
+
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+
+# http://www.gnu.org/copyleft/gpl.html
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> DESCRIPTION <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# Extract phastcons scores from a specified genome.
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+use warnings;
+use strict;
+use Maasha::Biopieces;
+use Maasha::Filesys;
+use Maasha::UCSC::Wiggle;
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+my ( $options, $in, $out, $phastcons_file, $phastcons_index, $index, $fh_phastcons, $scores, $record );
+
+$options = Maasha::Biopieces::parse_options(
+    [
+        { long => 'genome', short => 'g', type => 'genome', mandatory => 'yes', default => undef, allowed => undef, disallowed => undef },
+        { long => 'chr',    short => 'c', type => 'string', mandatory => 'no',  default => undef, allowed => undef, disallowed => undef },
+        { long => 'beg',    short => 'b', type => 'uint',   mandatory => 'no',  default => undef, allowed => undef, disallowed => 0 },
+        { long => 'end',    short => 'e', type => 'uint',   mandatory => 'no',  default => undef, allowed => undef, disallowed => 0 },
+        { long => 'len',    short => 'l', type => 'uint',   mandatory => 'no',  default => undef, allowed => undef, disallowed => 0 },
+        { long => 'flank',  short => 'f', type => 'uint',   mandatory => 'no',  default => 0,     allowed => undef, disallowed => undef },
+    ]   
+);
+
+$in  = Maasha::Biopieces::read_stream( $options->{ "stream_in" } );
+$out = Maasha::Biopieces::write_stream( $options->{ "stream_out" } );
+
+$phastcons_file  = "$ENV{ 'BP_DATA' }/genomes/$options->{ 'genome' }/phastcons/$options->{ 'genome' }.pp";
+$phastcons_index = "$ENV{ 'BP_DATA' }/genomes/$options->{ 'genome' }/phastcons/$options->{ 'genome' }.pp.index";
+
+$index           = Maasha::UCSC::Wiggle::fixedstep_index_retrieve( $phastcons_index );
+$fh_phastcons    = Maasha::Filesys::file_read_open( $phastcons_file );
+
+if ( defined $options->{ "chr" } and defined $options->{ "beg" } and ( defined $options->{ "end" } or defined $options->{ "len" } ) )
+{
+    $options->{ "beg" } -= 1;   # request is 1-based
+    $options->{ "end" } -= 1;   # request is 1-based
+
+    if ( $options->{ "len" } ) {
+        $options->{ "end" } = $options->{ "beg" } + $options->{ "len" } - 1;
+    }
+
+    $scores = Maasha::UCSC::Wiggle::fixedstep_index_lookup( $index, $fh_phastcons, $options->{ "chr" }, $options->{ "beg" }, $options->{ "end" }, $options->{ "flank" } );
+
+    $record->{ "CHR" }       = $options->{ "chr" };
+    $record->{ "CHR_BEG" }   = $options->{ "beg" } - $options->{ "flank" };
+    $record->{ "CHR_END" }   = $options->{ "end" } + $options->{ "flank" };
+    
+    $record->{ "PHASTCONS" }   = join ",", @{ $scores };
+    $record->{ "PHAST_COUNT" } = scalar @{ $scores };  # DEBUG
+
+    Maasha::Biopieces::put_record( $record, $out );
+}   
+
+while ( $record = Maasha::Biopieces::get_record( $in ) ) 
+{
+    if ( $record->{ "REC_TYPE" } eq "BED" )
+    {
+        $scores = Maasha::UCSC::Wiggle::fixedstep_index_lookup( $index, $fh_phastcons, $record->{ "CHR" }, $record->{ "CHR_BEG" }, $record->{ "CHR_END" }, $options->{ "flank" } );
+    }
+    elsif ( $record->{ "REC_TYPE" } eq "PSL" )
+    {
+        $scores = Maasha::UCSC::Wiggle::fixedstep_index_lookup( $index, $fh_phastcons, $record->{ "S_ID" }, $record->{ "S_BEG" }, $record->{ "S_END" }, $options->{ "flank" } );
+    }
+    elsif ( $record->{ "REC_TYPE" } eq "BLAST" )
+    {
+        $scores = Maasha::UCSC::Wiggle::fixedstep_index_lookup( $index, $fh_phastcons, $record->{ "S_ID" }, $record->{ "S_BEG" }, $record->{ "S_END" }, $options->{ "flank" } );
+    }
+
+    $record->{ "PHASTCONS" } = join ",", @{ $scores } if @{ $scores };
+#    $record->{ "PHAST_COUNT" } = @{ $scores } if @{ $scores };  # DEBUG
+
+    Maasha::Biopieces::put_record( $record, $out );
+}
+
+close $fh_phastcons if $fh_phastcons;                                                                                                                                          
+
+Maasha::Biopieces::close_stream( $in );
+Maasha::Biopieces::close_stream( $out );
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+BEGIN
+{
+    Maasha::Biopieces::status_set();
+}
+
+
+END
+{
+    Maasha::Biopieces::status_log();
+}
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+__END__

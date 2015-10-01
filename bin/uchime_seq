@@ -1,0 +1,92 @@
+#!/usr/bin/env ruby
+
+# Copyright (C) 2007-2011 Martin A. Hansen.
+
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+
+# http://www.gnu.org/copyleft/gpl.html
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# This program is part of the Biopieces framework (www.biopieces.org).
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> DESCRIPTION <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# Usearch sequences in the stream against a specified database.
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+require 'maasha/biopieces'
+require 'maasha/fasta'
+require 'maasha/usearch'
+
+casts = []
+casts << {:long=>'database', :short=>'d', :type=>'file!', :mandatory=>true, :default=>nil, :allowed=>nil, :disallowed=>nil}
+
+options = Biopieces.options_parse(ARGV, casts)
+
+tmpdir  = Biopieces.mktmpdir
+infile  = File.join(tmpdir, "in.fna")
+tmpfile = File.join(tmpdir, "tmp.stream")
+outfile = File.join(tmpdir, "out.uc")
+
+Biopieces.open(options[:stream_in], tmpfile) do |input, output|
+  Fasta.open(infile, "w") do |fasta_io|
+    input.each_record do |record|
+      output.puts record
+
+      if record[:SEQ_NAME] and record[:SEQ]
+        fasta_io.puts Seq.new_bp(record).to_fasta
+      end
+    end
+  end
+end
+
+us = Usearch.new(infile, outfile, options)
+
+us.uchime
+
+lookup = {}
+
+File.open(outfile, 'r') do |ios|
+  while ! ios.eof?
+    line   = ios.readline.chomp
+    fields = line.split("\t")
+
+    q_id = fields[1]
+    chim = fields[-1]
+
+    if chim == 'Y'
+      lookup[q_id] = 'YES'
+    else
+      lookup[q_id] = 'NO'
+    end
+  end
+end
+
+Biopieces.open(tmpfile, options[:stream_out]) do |input, output|
+  input.each_record do |record|
+    if record[:SEQ_NAME] and record[:SEQ]
+      record[:CHIMERIC] = lookup[record[:SEQ_NAME]];
+    end
+    
+    output.puts record
+  end
+end
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+__END__

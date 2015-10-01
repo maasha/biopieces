@@ -1,0 +1,111 @@
+#!/usr/bin/env ruby
+
+# Copyright (C) 2007-2012 Martin A. Hansen.
+
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+
+# http://www.gnu.org/copyleft/gpl.html
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# This program is part of the Biopieces framework (www.biopieces.org).
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> DESCRIPTION <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# Calculate the mean or local mean of quality SCORES in the stream.
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+require 'maasha/biopieces'
+require 'maasha/seq'
+require 'inline'
+
+# Opening class Seq to add scores_mean_local(_C) methods.
+class Seq
+  # Method to run a sliding window of a specified size across a Phred type
+  # scores string and calculate for each window the mean score and return
+  # the minimum mean score.
+  def scores_mean_local(window_size)
+    scores_mean_local_C(self.qual, self.length, Seq::SCORE_BASE, window_size)
+  end
+
+  inline do |builder|
+    builder.c %{
+      VALUE scores_mean_local_C(
+        VALUE _qual,
+        VALUE _qual_len,
+        VALUE _score_base,
+        VALUE _window_size
+      )
+      {
+        unsigned char *qual        = (unsigned char *) StringValuePtr(_qual);
+        unsigned int   qual_len    = FIX2UINT(_qual_len);
+        unsigned int   score_base  = FIX2UINT(_score_base);
+        unsigned int   window_size = FIX2UINT(_window_size);
+        unsigned int   sum         = 0;
+        unsigned int   i           = 0;
+        float          mean        = 0.0;
+
+        // fill window
+        for (i = 0; i < window_size; i++)
+          sum += qual[i] - score_base;
+
+        mean = sum / window_size;
+
+        // run window across the rest of the scores
+        while (i < qual_len)
+        {
+          sum += qual[i] - score_base;
+          sum -= qual[i - window_size] - score_base;
+
+          mean = ( mean < sum / window_size ) ? mean : sum / window_size;
+        
+          i++;
+        }
+
+        return rb_float_new(mean);
+      }
+    }
+  end
+end
+
+casts = []
+casts << {:long=>'local',       :short=>'l', :type=>'flag',  :mandatory=>false, :default=>nil, :allowed=>nil, :disallowed=>nil}
+casts << {:long=>'window_size', :short=>'w', :type=>'uint',  :mandatory=>false, :default=>5,   :allowed=>nil, :disallowed=>'0'}
+casts << {:long=>'min',         :short=>'m', :type=>'float', :mandatory=>false, :default=>15,  :allowed=>nil, :disallowed=>nil}
+
+options = Biopieces.options_parse(ARGV, casts)
+
+Biopieces.open(options[:stream_in], options[:stream_out]) do |input, output|
+  input.each_record do |record|
+    if record[:SEQ] and record[:SCORES] and record[:SEQ].length > 0
+      entry = Seq.new_bp(record)
+
+      if options[:local]
+        record[:SCORES_MEAN_LOCAL] = entry.scores_mean_local(options[:window_size]).round(2)
+      else
+        record[:SCORES_MEAN] = entry.scores_mean.round(2)
+      end
+    end
+
+    output.puts record
+  end
+end
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+__END__

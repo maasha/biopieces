@@ -1,0 +1,113 @@
+#!/usr/bin/env perl
+
+# Copyright (C) 2007-2009 Martin A. Hansen.
+
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+
+# http://www.gnu.org/copyleft/gpl.html
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> DESCRIPTION <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# Sort records in the stream.
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+use warnings;
+use strict;
+use Maasha::Biopieces;
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+my ( $options, $in, $out, @keys, $key, @sort_cmd, $sort_str, $sort_sub, @records, $record, $i, $ok );
+
+$options = Maasha::Biopieces::parse_options(
+    [
+        { long => 'keys',    short => 'k', type => 'list', mandatory => 'yes', default => undef, allowed => undef, disallowed => undef },
+        { long => 'reverse', short => 'r', type => 'flag', mandatory => 'no',  default => undef, allowed => undef, disallowed => undef },
+    ]   
+);
+
+$in  = Maasha::Biopieces::read_stream( $options->{ "stream_in" } );
+$out = Maasha::Biopieces::write_stream( $options->{ "stream_out" } );
+
+foreach $key ( @{ $options->{ "keys" } } )
+{
+    if ( $key =~ s/n$// ) {
+        push @sort_cmd, qq(\$a->{ "$key" } <=> \$b->{ "$key" });
+    } else {
+        push @sort_cmd, qq(\$a->{ "$key" } cmp \$b->{ "$key" });
+    }
+}
+
+$sort_str = join " or ", @sort_cmd;
+$sort_sub = eval "sub { $sort_str }";   # NB security issue!
+
+while ( $record = Maasha::Biopieces::get_record( $in ) )
+{
+    $ok = 1;
+    foreach $key ( @{ $options->{ "keys" } } )
+    {
+        if ( not exists $record->{ $key } )
+        {
+            $ok = 0;
+            last;
+        }
+    }
+
+    push @records, $record if $ok;
+}
+
+@records = sort $sort_sub @records;
+
+if ( $options->{ "reverse" } )
+{
+    for ( $i = scalar @records - 1; $i >= 0; $i-- ) {
+        Maasha::Biopieces::put_record( $records[ $i ], $out );
+    }
+}
+else
+{
+    for ( $i = 0; $i < scalar @records; $i++ ) {
+        Maasha::Biopieces::put_record( $records[ $i ], $out );
+    }
+}
+
+Maasha::Biopieces::close_stream( $in );
+Maasha::Biopieces::close_stream( $out );
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+BEGIN
+{
+    Maasha::Biopieces::status_set();
+}
+
+
+END
+{
+    Maasha::Biopieces::status_log();
+}
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+__END__

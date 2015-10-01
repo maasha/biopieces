@@ -1,0 +1,96 @@
+#!/usr/bin/env perl
+
+# Copyright (C) 2007-2009 Martin A. Hansen.
+
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+
+# http://www.gnu.org/copyleft/gpl.html
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> DESCRIPTION <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# Introduce indels into sequences in the stream.
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+use warnings;
+use strict;
+use Maasha::Common;
+use Maasha::Biopieces;
+use Maasha::Seq;
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+my ( $options, $in, $out, $insertions, $deletions, $seq_len, $record );
+
+$options = Maasha::Biopieces::parse_options(
+    [
+        { long => 'insertions',         short => 'i', type => 'uint',  mandatory => 'no', default => 0, allowed => undef, disallowed => undef },
+        { long => 'insertions_percent', short => 'P', type => 'float', mandatory => 'no', default => 0, allowed => undef, disallowed => undef },
+        { long => 'deletions',          short => 'd', type => 'uint',  mandatory => 'no', default => 0, allowed => undef, disallowed => undef },
+        { long => 'deletions_percent',  short => 'D', type => 'float', mandatory => 'no', default => 0, allowed => undef, disallowed => undef },
+    ]   
+);
+
+$in  = Maasha::Biopieces::read_stream( $options->{ "stream_in" } );
+$out = Maasha::Biopieces::write_stream( $options->{ "stream_out" } );
+
+while ( $record = Maasha::Biopieces::get_record( $in ) ) 
+{
+    if ( $record->{ "SEQ" } )
+    {
+        $seq_len     = length $record->{ "SEQ" };
+
+        $insertions  = $options->{ "insertions" } || int( $seq_len * ( $options->{ "insertions_percent" } / 100 ) );
+        $deletions   = $options->{ "deletions" }  || int( $seq_len * ( $options->{ "deletions_percent" } / 100 ) );
+
+        Maasha::Common::error( qq(insertions > sequence length: $insertions > $seq_len)  ) if $insertions > $seq_len;
+        Maasha::Common::error( qq(deletions > sequence length: $deletions > $seq_len)  )   if $deletions > $seq_len;
+
+        $record->{ "SEQ" } = Maasha::Seq::seq_insert( $record->{ "SEQ" }, $insertions );
+        $record->{ "SEQ" } = Maasha::Seq::seq_delete( $record->{ "SEQ" }, $deletions );
+
+        $record->{ "SEQ_LEN" } = length $record->{ "SEQ" };
+    }
+
+    Maasha::Biopieces::put_record( $record, $out );
+}
+
+Maasha::Biopieces::close_stream( $in );
+Maasha::Biopieces::close_stream( $out );
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+BEGIN
+{
+    Maasha::Biopieces::status_set();
+}
+
+
+END
+{
+    Maasha::Biopieces::status_log();
+}
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+__END__

@@ -1,0 +1,165 @@
+#!/usr/bin/env ruby
+
+# Copyright (C) 2007-2011 Martin A. Hansen.
+
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+
+# http://www.gnu.org/copyleft/gpl.html
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# This program is part of the Biopieces framework (www.biopieces.org).
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> DESCRIPTION <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# Find barcodes in sequences in the stream.
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+require 'maasha/biopieces'
+require 'maasha/roche'
+require 'maasha/bits'
+require 'pp'
+
+class BarCodeFinderError < StandardError; end
+
+class BarCodeFinder
+  def initialize(pos, max_mismatches)
+    @pos            = pos
+    @max_mismatches = max_mismatches
+    @barcode_hash   = {}
+    @barcode_sizes  = []
+  end
+
+  def parse_barcodes(file)
+    length = 0
+    hash   = {}
+
+    File.open(file, "r") do |ios|
+      while not ios.eof?
+        name, barcode = ios.readline.chomp.split(/\s+/)
+
+        if length > 0
+          raise BarCodeFinderError, "Uneven barcode length detected" if length != barcode.length
+        else
+          length = barcode.length
+        end
+
+        hash[barcode.upcase.to_sym] = name
+      end
+    end
+
+    load_barcodes(hash)
+  end
+
+  def load_barcodes(hash)
+    @barcode_sizes << hash.keys.first.to_s.size
+
+    @barcode_hash.merge!(hash)
+  end
+
+  def find_barcode(seq)
+    raise BarCodeFinderError, "No barcodes to find" if @barcode_hash.empty?
+
+    @barcode_sizes.each do |size|
+      hamming_dist = 0
+      barcode      = seq[@pos ... @pos + size].upcase.to_sym
+
+      if @barcode_hash[barcode]
+        return BarCode.new(barcode, @barcode_hash[barcode], @pos, size, hamming_dist)
+      elsif @max_mismatches > 0
+        @barcode_hash.each_key do |key|
+          if key.to_s.length == barcode.to_s.size
+            hamming_dist = barcode.to_s.hamming_distance(key.to_s)
+
+            if hamming_dist <= @max_mismatches
+              return BarCode.new(key, @barcode_hash[key], @pos, size, hamming_dist)
+            end
+          end
+        end
+      end
+    end
+
+    nil
+  end
+
+  private
+
+  # Class to hold a BacCode object.
+  class BarCode
+    attr_accessor :barcode, :name, :pos, :len, :mismatches
+
+    def initialize(barcode, name, pos, len, mismatches)
+      @barcode    = barcode
+      @name       = name
+      @pos        = pos
+      @len        = len
+      @mismatches = mismatches
+    end
+
+    def to_hash
+      hash = {}
+      hash[:BARCODE]            = @barcode
+      hash[:BARCODE_NAME]       = @name
+      hash[:BARCODE_POS]        = @pos
+      hash[:BARCODE_LEN]        = @len
+      hash[:BARCODE_MISMATCHES] = @mismatches
+      hash
+    end
+
+    def start
+      @pos + @len
+    end
+  end
+end
+
+casts = []
+casts << {:long=>'barcodes_in', :short=>'b', :type=>'file!', :mandatory=>false, :default=>nil, :allowed=>nil,     :disallowed=>nil}
+casts << {:long=>'pos',         :short=>'p', :type=>'uint',  :mandatory=>false, :default=>0,   :allowed=>nil,     :disallowed=>nil}
+casts << {:long=>'mismatches',  :short=>'m', :type=>'uint',  :mandatory=>false, :default=>0,   :allowed=>"0,1,2", :disallowed=>nil}
+casts << {:long=>'gsmids',      :short=>'g', :type=>'flag',  :mandatory=>false, :default=>nil, :allowed=>nil,     :disallowed=>nil}
+casts << {:long=>'rlmids',      :short=>'r', :type=>'flag',  :mandatory=>false, :default=>nil, :allowed=>nil,     :disallowed=>nil}
+casts << {:long=>'remove',      :short=>'R', :type=>'flag',  :mandatory=>false, :default=>nil, :allowed=>nil,     :disallowed=>nil}
+
+options = Biopieces.options_parse(ARGV, casts)
+
+bc_finder = BarCodeFinder.new(options[:pos], options[:mismatches])
+bc_finder.parse_barcodes(options[:barcodes_in]) if options[:barcodes_in]
+bc_finder.load_barcodes(Roche::GSMID_HASH)      if options[:gsmids]
+bc_finder.load_barcodes(Roche::RLMID_HASH)      if options[:rlmids]
+
+Biopieces.open(options[:stream_in], options[:stream_out]) do |input, output|
+  input.each_record do |record|
+    if record[:SEQ]
+      if barcode = bc_finder.find_barcode(record[:SEQ])
+        record.merge!(barcode.to_hash)
+
+        if options[:remove]
+          record[:SEQ]     = record[:SEQ][barcode.start .. -1]
+          record[:SCORES]  = record[:SCORES][barcode.start .. -1] if record[:SCORES]
+          record[:SEQ_LEN] = record[:SEQ].length
+        end
+      end
+    end
+
+    output.puts record
+  end
+end
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+__END__

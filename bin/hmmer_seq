@@ -1,0 +1,174 @@
+#!/usr/bin/env ruby
+
+# Copyright (C) 2007-2012 Martin A. Hansen.
+
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+
+# http://www.gnu.org/copyleft/gpl.html
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# This program is part of the Biopieces framework (www.biopieces.org).
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> DESCRIPTION <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# HMMER search sequences in the stream against a specified database.
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+require 'pp'
+require 'maasha/biopieces'
+require 'maasha/fasta'
+
+class Hash
+  def to_bp
+    record         = self
+    bp             = {}
+    bp[:REC_TYPE]  = "HMMER" 
+    bp[:S_ID]      = record[:target_name]
+    bp[:S_AC]      = record[:target_accession]
+    bp[:Q_ID]      = record[:query_name]
+    bp[:Q_AC]      = record[:query_accession]
+    bp[:E_VAL_SEQ] = record[:e_value_sequence]
+    bp[:SCORE_SEQ] = record[:score_sequence]
+    bp[:BIAS_SEQ]  = record[:bias_sequence]
+    bp[:E_VAL_DOM] = record[:e_value_domain]
+    bp[:SCORE_DOM] = record[:score_domain]
+    bp[:BIAS_DOM]  = record[:bias_domain]
+    bp[:EXP]       = record[:exp]
+    bp[:REG]       = record[:reg]
+    bp[:CLU]       = record[:clu]
+    bp[:OV]        = record[:ov]
+    bp[:ENV]       = record[:env]
+    bp[:DOM]       = record[:dom]
+    bp[:REP]       = record[:rep]
+    bp[:INC]       = record[:inc]
+    bp[:DESC]      = record[:description_of_target]
+
+    bp
+  end
+end
+
+class Hmmer
+  def initialize(output_file, options)
+    @output_file = output_file
+    @options     = options
+    @command     = []
+  end
+
+  def search_db(query_file)
+    @command << "hmmsearch"
+    @command << "--tblout #{@output_file}"
+    @command << "--cpu #{@options[:cpus]}"
+    @command << @options[:database]
+    @command << query_file
+
+    execute
+  end
+
+  def each
+    records = []
+
+    File.open(@output_file, "r") do |ios|
+
+      # target name    accession  query name           accession    E-value  score  bias   E-value  score  bias   exp reg
+      # clu  ov env dom rep inc description of target
+      ios.each_line do |line|
+        next if line[0] == '#'
+        fields = line.chomp.split(" ")
+
+        record = {}
+        record[:target_name]           = fields[0]
+        record[:target_accession]      = fields[1]
+        record[:query_name]            = fields[2]
+        record[:query_accession]       = fields[3]
+        record[:e_value_sequence]      = fields[4].to_f
+        record[:score_sequence]        = fields[5].to_f
+        record[:bias_sequence]         = fields[6].to_f
+        record[:e_value_domain]        = fields[7].to_f
+        record[:score_domain]          = fields[8].to_f
+        record[:bias_domain]           = fields[9].to_f
+        record[:exp]                   = fields[10].to_f
+        record[:reg]                   = fields[11].to_i
+        record[:clu]                   = fields[12].to_i
+        record[:ov]                    = fields[13].to_i
+        record[:env]                   = fields[14].to_i
+        record[:dom]                   = fields[15].to_i
+        record[:rep]                   = fields[16].to_i
+        record[:inc]                   = fields[17].to_i
+        record[:description_of_target] = fields[18]
+
+        if block_given?
+          yield record
+        else
+          records << record
+        end
+      end
+    end
+
+    return records if block_given?
+  end
+
+  private
+
+  # Method to execute a command using a system() call.
+  # The command is composed of bits from the @command variable.
+  def execute
+    @command.unshift "nice -n 19"
+    @command << "> /dev/null 2>&1" unless @options[:verbose]
+
+    command = @command.join(" ")
+    $stderr.puts "Running command: #{command}" if @options[:verbose]
+    system(command)
+    raise "Command failed: #{command}" unless $?.success?
+
+    @command = []
+  end
+end
+
+casts = []
+casts << {:long=>'database', :short=>'d', :type=>'file!', :mandatory=>true,  :default=>nil, :allowed=>nil, :disallowed=>nil}
+casts << {:long=>'cpus',     :short=>'c', :type=>'uint',  :mandatory=>false, :default=>1,   :allowed=>nil, :disallowed=>"0"}
+
+options     = Biopieces.options_parse(ARGV, casts)
+tmpdir      = Biopieces.mktmpdir
+output_file = File.join(tmpdir, "output.tab")
+query_file  = File.join(tmpdir, "query.fna")
+
+Biopieces.open(options[:stream_in], options[:stream_out]) do |input, output|
+  Fasta.open(query_file, "w") do |fasta_io|
+    input.each_record do |record|
+      if record[:SEQ_NAME] and record[:SEQ]
+        entry = Seq.new_bp(record)
+
+        fasta_io.puts entry.to_fasta
+      end
+
+      output.puts record
+    end
+  end
+
+  hm = Hmmer.new(output_file, options)
+  hm.search_db(query_file)
+
+  hm.each do |hit|
+    output.puts hit.to_bp
+  end
+end
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+__END__

@@ -1,0 +1,78 @@
+#!/usr/bin/env ruby
+
+# Copyright (C) 2007-2013 Martin A. Hansen.
+
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+
+# http://www.gnu.org/copyleft/gpl.html
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# This program is part of the Biopieces framework (www.biopieces.org).
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> DESCRIPTION <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# Create bowtie2 index from sequences in the stream.
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+require 'maasha/biopieces'
+require 'maasha/fasta'
+
+casts = []
+casts << {:long=>'no_stream',  :short=>'x', :type=>'flag',   :mandatory=>false, :default=>nil, :allowed=>nil, :disallowed=>nil}
+casts << {:long=>'directory',  :short=>'d', :type=>'dir',    :mandatory=>true,  :default=>nil, :allowed=>nil, :disallowed=>nil}
+casts << {:long=>'index_name', :short=>'i', :type=>'string', :mandatory=>true,  :default=>nil, :allowed=>nil, :disallowed=>nil}
+
+options = Biopieces.options_parse(ARGV, casts)
+
+unless File.directory? options[:directory]
+  Dir.mkdir options[:directory]
+end
+
+tmpdir  = Biopieces.mktmpdir
+tmpfile = File.join(tmpdir, "tmp.fna")
+
+Biopieces.open(options[:stream_in], options[:stream_out]) do |input, output|
+  Fasta.open(tmpfile, "w") do |fasta_io|
+    input.each_record do |record|
+      output.puts record unless options[:no_stream]
+
+      if record[:SEQ_NAME] and record[:SEQ]
+        fasta_io.puts Seq.new_bp(record).to_fasta
+      end
+    end
+  end
+end
+
+cmd = []
+cmd << "bowtie2-build"
+cmd << "-q" unless options[:verbose]
+cmd << tmpfile
+cmd << File.join(options[:directory], options[:index_name])
+
+c = cmd.join(" ")
+
+$stderr.puts c if options[:verbose]
+
+system(c)
+
+raise "Error: executing #{c}" unless $?.success?
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+__END__

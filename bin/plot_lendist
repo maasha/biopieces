@@ -1,0 +1,103 @@
+#!/usr/bin/env perl
+
+# Copyright (C) 2007-2009 Martin A. Hansen.
+
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+
+# http://www.gnu.org/copyleft/gpl.html
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> DESCRIPTION <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# Plot a length distribution histogram.
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+use warnings;
+use strict;
+use Maasha::Biopieces;
+use Maasha::Plot;
+use Maasha::Calc;
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+my ( $options, $in, $out, $default, $terminals, $record, %data_hash, $max, @data_list, $i, $result, $fh );
+
+$default   = "Length Distribution";
+$terminals = "dumb,x11,aqua,post,svg";
+
+$options = Maasha::Biopieces::parse_options(
+    [
+        { long => 'no_stream',  short => 'x', type => 'flag',   mandatory => 'no',  default => undef,    allowed => undef,      disallowed => undef },
+        { long => 'data_out',   short => 'o', type => 'file',   mandatory => 'no',  default => undef,    allowed => undef,      disallowed => undef },
+        { long => 'key',        short => 'k', type => 'string', mandatory => 'yes', default => undef,    allowed => undef,      disallowed => undef },
+        { long => 'terminal',   short => 't', type => 'string', mandatory => 'no',  default => 'dumb',   allowed => $terminals, disallowed => undef },
+        { long => 'title',      short => 'T', type => 'string', mandatory => 'no',  default => $default, allowed => undef,      disallowed => undef },
+        { long => 'xlabel',     short => 'X', type => 'string', mandatory => 'no',  default => undef,    allowed => undef,      disallowed => undef },
+        { long => 'ylabel',     short => 'Y', type => 'string', mandatory => 'no',  default => undef,    allowed => undef,      disallowed => undef },
+        { long => 'logscale_y', short => 'L', type => 'flag',   mandatory => 'no',  default => undef,    allowed => undef,      disallowed => undef },
+    ]   
+);
+
+$in  = Maasha::Biopieces::read_stream( $options->{ "stream_in" } );
+$out = Maasha::Biopieces::write_stream( $options->{ "stream_out" } );
+
+while ( $record = Maasha::Biopieces::get_record( $in ) ) 
+{
+    $data_hash{ $record->{ $options->{ "key" } } }++ if defined $record->{ $options->{ "key" } };
+
+    Maasha::Biopieces::put_record( $record, $out ) if not $options->{ "no_stream" };
+}
+
+$max = Maasha::Calc::list_max( [ keys %data_hash ] );
+
+for ( $i = 0; $i <= $max; $i++ ) {
+    push @data_list, [ $i, $data_hash{ $i } || 0 ];
+}
+
+$result = Maasha::Plot::histogram_lendist( \@data_list, $options );
+
+$fh = Maasha::Biopieces::write_stream( $options->{ "data_out" } );
+
+print $fh "$_\n" foreach @{ $result };
+
+close $fh;
+
+Maasha::Biopieces::close_stream( $in );
+Maasha::Biopieces::close_stream( $out );
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+BEGIN
+{
+    Maasha::Biopieces::status_set();
+}
+
+
+END
+{
+    Maasha::Biopieces::status_log();
+}
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+__END__

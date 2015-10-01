@@ -1,0 +1,101 @@
+#!/usr/bin/env ruby
+
+# Copyright (C) 2007-2011 Martin A. Hansen.
+
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+
+# http://www.gnu.org/copyleft/gpl.html
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# This program is part of the Biopieces framework (www.biopieces.org).
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> DESCRIPTION <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# Remove primers from sequences in the stream.
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+require 'pp'
+require 'maasha/biopieces'
+require 'maasha/seq'
+require 'maasha/seq/backtrack'
+
+include BackTrack
+
+casts = []
+casts << {:long=>'forward',    :short=>'f', :type=>'string', :mandatory=>true,  :default=>nil, :allowed=>nil, :disallowed=>nil}
+casts << {:long=>'reverse',    :short=>'r', :type=>'string', :mandatory=>true,  :default=>nil, :allowed=>nil, :disallowed=>nil}
+casts << {:long=>'mismatches', :short=>'m', :type=>'uint',   :mandatory=>false, :default=>2,   :allowed=>nil, :disallowed=>nil}
+casts << {:long=>'insertions', :short=>'i', :type=>'uint',   :mandatory=>false, :default=>1,   :allowed=>nil, :disallowed=>nil}
+casts << {:long=>'deletions',  :short=>'d', :type=>'uint',   :mandatory=>false, :default=>1,   :allowed=>nil, :disallowed=>nil}
+
+options = Biopieces.options_parse(ARGV, casts)
+
+Biopieces.open(options[:stream_in], options[:stream_out]) do |input, output|
+  input.each do |record|
+    if record[:SEQ]
+      forward = false
+      reverse = false
+      entry = Seq.new_bp(record)
+
+      entry.patscan(options[:forward].to_s,
+                  max_mismatches: options[:mismatches],
+                  max_insertions: options[:insertions],
+                  max_deletions:  options[:deletions]) do |match|
+        record[:FORWARD_POS] = match.pos
+        record[:FORWARD_LEN] = match.length
+        pos = match.pos + match.length
+        len = entry.length - pos
+        entry = entry[pos ... pos + len] if len > 0
+        forward = true
+        break
+      end
+
+      entry.patscan(options[:reverse].to_s,
+                  max_mismatches: options[:mismatches],
+                  max_insertions: options[:insertions],
+                  max_deletions:  options[:deletions]) do |match|
+        record[:REVERSE_POS] = match.pos
+        record[:REVERSE_LEN] = match.length
+        pos = 0
+        len = match.pos
+
+        if len == 0
+          entry.seq  = ""
+          entry.qual = "" if entry.qual
+        else
+          entry = entry[pos ... pos + len]
+        end 
+
+        reverse = true
+        break
+      end
+
+      if forward or reverse
+        record.merge!(entry.to_bp)
+      end
+
+      output.puts record
+    else
+      output.puts record
+    end
+  end
+end
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+__END__

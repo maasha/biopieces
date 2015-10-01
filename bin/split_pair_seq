@@ -1,0 +1,72 @@
+#!/usr/bin/env ruby
+
+# Copyright (C) 2007-2013 Martin A. Hansen.
+
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+
+# http://www.gnu.org/copyleft/gpl.html
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# This program is part of the Biopieces framework (www.biopieces.org).
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> DESCRIPTION <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# Split joined pair-end sequences in the stream.
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+require 'maasha/biopieces'
+require 'maasha/seq'
+require 'pp'
+
+options = Biopieces.options_parse(ARGV)
+
+Biopieces.open(options[:stream_in], options[:stream_out]) do |input, output|
+  input.each_record do |record|
+    if record[:SEQ_NAME] and record[:SEQ] and record[:SEQ_LEN_LEFT] and record[:SEQ_LEN_RIGHT]
+      entry = Seq.new_bp(record)
+
+      len_left  = record[:SEQ_LEN_LEFT].to_i
+      len_right = record[:SEQ_LEN_RIGHT].to_i
+
+      unless len_left + len_right == entry.length
+        raise "SEQ_LEN_LEFT + SEQ_LEN_RIGHT != SEQ_LEN #{len_left} + #{len_right} != #{entry.length}"
+      end
+
+      entry1 = entry[0 ... len_left]
+      entry2 = entry[len_left .. -1]
+
+      if entry.seq_name =~ /^[^ ]+ \d:/
+        entry2.seq_name.sub!(/ \d:/, " 2:")
+      elsif entry.seq_name =~ /^.+\/\d$/
+        entry2.seq_name[-1] = "2"
+      else
+        raise "Could not match sequence name: #{entry.seq_name}"
+      end
+
+      output.puts entry1.to_bp
+      output.puts entry2.to_bp
+    else
+      output.puts record
+    end
+  end
+end
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+__END__

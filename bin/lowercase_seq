@@ -1,0 +1,169 @@
+#!/usr/bin/python
+
+import os, string, sys, getopt, Args, optparse
+
+record_delimiter = "\n---\n"
+
+class Lowercase_seq:
+	in_stream = None
+	out_stream = None
+	eo_buffer = False
+	buffer = ''
+	rec_dic = {}
+	rec_num = 0
+
+	###########################################
+	def __init__(self):
+		pass
+	###########################################
+
+	###########################################
+	def open_streams(self, input_file, output_file):
+		#print input_file, output_file
+		if input_file == '':
+			self.in_stream = sys.stdin
+			#print "in_stream = <STDIN>"
+		else:
+			try:
+				self.in_stream = open(input_file, 'r')
+				#print "in_stream = %s" % (input_file)
+			except:
+				raise IOError
+
+		if output_file == '':
+			self.out_stream = sys.stdout
+			#print "out_stream = <STDOUT>"
+		else:
+			try:
+				self.out_stream = open(output_file, 'w')
+				#print "out_stream = %s" % (output_file)
+			except:
+				raise IOError
+	###########################################
+
+	###########################################
+	def close_streams(self):
+		if self.in_stream:
+			self.in_stream.close()
+		if self.out_stream:
+			self.out_stream.close()
+	###########################################
+
+	###########################################
+	def get_record(self):
+		rec = ''
+		eof_flag = False
+		while not self.eo_buffer:
+			#print "STDIN.ISATTY :", self.in_stream.isatty()
+
+			if self.in_stream.isatty():
+				eof_flag = True
+
+			if eof_flag:
+				if self.buffer == '':
+					self.eo_buffer = True
+					break
+			else:
+				tmp = self.in_stream.read(1000)
+			if not tmp:
+				eof_flag = True
+
+			self.buffer = self.buffer + tmp
+			delim_index = self.buffer.find(record_delimiter)
+			if delim_index >= 0:
+				rec = self.buffer[:delim_index]
+				self.buffer = self.buffer[delim_index + len(record_delimiter):]
+				break
+		return rec
+	###########################################
+
+	###########################################
+	def process_record(self, rec):
+		#print "PARSE_RECORD"
+		#print rec
+		#print "==="
+		lines = rec.split("\n")
+		self.rec_num += 1
+		self.rec_dic[self.rec_num] = {}
+		for l in lines:
+			toks = l.split(": ")
+			if toks[0]=="SEQ":
+				self.rec_dic[self.rec_num][toks[0]] = toks[1].lower()
+			else:
+				self.rec_dic[self.rec_num][toks[0]] = toks[1]
+			#self.rec_dic[self.rec_num][toks[0]] = toks[1]
+		#print self.rec_dic[self.rec_num]
+		return self.rec_num
+	###########################################
+
+	###########################################
+	def put_record(self, r_num):
+		rec = self.rec_dic[r_num]
+		for k in rec.keys():
+			#print "%s: %s" % (k, rec[k])
+			self.out_stream.write("%s: %s\n" % (k, rec[k]))
+		#print "---"
+		self.out_stream.write("---\n")
+	###########################################
+
+	###########################################
+	def print_usage(self, opt):
+		#print opt
+		bp_dir = os.environ['BP_DIR']
+		usage_path = bp_dir + os.path.sep + "bp_usage" + os.path.sep + "lowercase_seq.wiki"
+		os.system("print_wiki -i %s %s" % (usage_path, opt))
+	###########################################
+
+
+# main
+
+lc_seq = Lowercase_seq()
+
+try:
+	opts, args = getopt.getopt(sys.argv[1:], "I:O:?vx", ["stream_in=", "stream_out=", "help", "verbose", "no_stream"])
+except getopt.GetoptError, err:
+	# print help information and exit:
+	print str(err) # will print something like "option -a not recognized"
+	lc_seq.print_usage("")
+	sys.exit(2)
+
+
+if len(opts)==0:
+	if sys.stdin.isatty():
+		lc_seq.print_usage("")
+		sys.exit(1)
+
+stream_in = ""
+stream_out = ""
+verbose = False
+for o, a in opts:
+	if o in ("-I", "--stream_in"):
+		stream_in = a
+	elif o in ("-O", "--stream_out"):
+		stream_out = a
+	elif o == "-?":
+		lc_seq.print_usage("")
+		sys.exit(1)
+	elif o == "--help":
+		lc_seq.print_usage("-?")
+		sys.exit(1)
+	elif o in ("-v", "--verbose"):
+		verbose = True
+
+try:
+	lc_seq.open_streams(stream_in, stream_out)
+except:
+	sys.stderr.write("%s\n" % ("IOError"))
+	sys.exit(1)
+
+
+while True:
+	rec = lc_seq.get_record()
+	if rec=='':
+		break
+	rec_num = lc_seq.process_record(rec)
+	lc_seq.put_record(rec_num)
+
+lc_seq.close_streams()
+
+

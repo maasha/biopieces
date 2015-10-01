@@ -1,0 +1,104 @@
+#!/usr/bin/env ruby
+
+# Copyright (C) 2007-2011 Martin A. Hansen.
+
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+
+# http://www.gnu.org/copyleft/gpl.html
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# This program is part of the Biopieces framework (www.biopieces.org).
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> DESCRIPTION <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# Analyze assembled sequences in the stream and output stats.
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+require 'maasha/biopieces'
+require 'maasha/fasta'
+require 'maasha/prodigal'
+require 'pp'
+
+casts = []
+casts << {:long=>'gene_cov',  :short=>'g', :type=>'flag',   :mandatory=>false, :default=>nil,      :allowed=>nil,           :disallowed=>nil}
+casts << {:long=>'procedure', :short=>'p', :type=>'string', :mandatory=>true,  :default=>'single', :allowed=>'single,meta', :disallowed=>nil}
+casts << {:long=>'no_stream', :short=>'x', :type=>'flag',   :mandatory=>false, :default=>nil,      :allowed=>nil,           :disallowed=>nil}
+casts << {:long=>'data_out',  :short=>'o', :type=>'file',   :mandatory=>false, :default=>nil,      :allowed=>nil,           :disallowed=>nil}
+
+options = Biopieces.options_parse(ARGV, casts)
+
+options[:full] = true;
+
+total   = 0
+lengths = []
+tmpdir  = Biopieces.mktmpdir
+infile  = File.join(tmpdir, "in.fna")
+outfile = File.join(tmpdir, "out.prodigal")
+
+Fasta.open(infile, "w") do |fasta_output|
+  Biopieces.open(options[:stream_in], options[:stream_out]) do |input, output|
+    input.each_record do |record|
+      if record[:SEQ]
+        seq = Seq.new_bp(record)
+
+        total   += record[:SEQ].length
+        lengths << record[:SEQ].length
+      end
+
+      output.puts record unless options[:no_stream]
+      fasta_output.puts seq.to_fasta
+    end
+  end
+end
+
+if options[:gene_cov]
+  prodigal = Prodigal.new(infile, outfile, options)
+  prodigal.run
+  gene_cov = prodigal.coverage
+end
+
+count = 0
+n50   = 0
+
+lengths.sort.reverse.each do |length|
+  count += length
+
+  if count >= total * 0.50
+    n50 = length
+    break
+  end
+end
+
+new_record = {}
+new_record[:N50]        = n50
+new_record[:MAX]        = lengths.max
+new_record[:MIN]        = lengths.min
+new_record[:MEAN]       = (total.to_f / lengths.size.to_f).to_i
+new_record[:TOTAL]      = total
+new_record[:COUNT]      = lengths.size
+new_record[:GENE_COV]   = gene_cov if options[:gene_cov]
+
+Biopieces.open(nil, options[:data_out]) do |input, output|
+  output.puts new_record
+end
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+__END__

@@ -1,0 +1,124 @@
+#!/usr/bin/env perl
+
+# Copyright (C) 2007-2009 Martin A. Hansen.
+
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+
+# http://www.gnu.org/copyleft/gpl.html
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> DESCRIPTION <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# Plot chromosome distribution histogram.
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+use warnings;
+use strict;
+use Maasha::Biopieces;
+use Maasha::Plot;
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+my ( $options, $in, $out, $default, $terminals, $record, %data_hash, @data_list, $elem, $sort_key, $count, $result, $fh );
+
+$default   = "Chromosome Distribution";
+$terminals = "dumb,x11,aqua,post,svg";
+
+$options = Maasha::Biopieces::parse_options(
+    [
+        { long => 'no_stream',  short => 'x', type => 'flag',   mandatory => 'no',  default => undef,    allowed => undef,      disallowed => undef },
+        { long => 'data_out',   short => 'o', type => 'file',   mandatory => 'no',  default => undef,    allowed => undef,      disallowed => undef },
+        { long => 'terminal',   short => 't', type => 'string', mandatory => 'no',  default => 'dumb',   allowed => $terminals, disallowed => undef },
+        { long => 'title',      short => 'T', type => 'string', mandatory => 'no',  default => $default, allowed => undef,      disallowed => undef },
+        { long => 'xlabel',     short => 'X', type => 'string', mandatory => 'no',  default => undef,    allowed => undef,      disallowed => undef },
+        { long => 'ylabel',     short => 'Y', type => 'string', mandatory => 'no',  default => undef,    allowed => undef,      disallowed => undef },
+        { long => 'logscale_y', short => 'L', type => 'flag',   mandatory => 'no',  default => undef,    allowed => undef,      disallowed => undef },
+    ]   
+);
+
+$in  = Maasha::Biopieces::read_stream( $options->{ "stream_in" } );
+$out = Maasha::Biopieces::write_stream( $options->{ "stream_out" } );
+
+while ( $record = Maasha::Biopieces::get_record( $in ) ) 
+{
+    if ( $record->{ "CHR" } ) {                                                             # generic
+        $data_hash{ $record->{ "CHR" } }++;
+    } elsif ( $record->{ "REC_TYPE" } eq "PATSCAN" and $record->{ "S_ID" } =~ /^chr/i ) {   # patscan
+        $data_hash{ $record->{ "S_ID" } }++;
+    } elsif ( $record->{ "REC_TYPE" } eq "PSL" and $record->{ "S_ID" } =~ /^chr/i ) {       # BLAT / PSL
+        $data_hash{ $record->{ "S_ID" } }++;
+    } elsif ( $record->{ "REC_TYPE" } eq "BLAST" and $record->{ "S_ID" } =~ /^chr/i ) {     # BLAST
+        $data_hash{ $record->{ "S_ID" } }++;
+    }
+
+    Maasha::Biopieces::put_record( $record, $out ) if not $options->{ "no_stream" };
+}
+
+foreach $elem ( keys %data_hash )
+{
+    $sort_key = $elem;
+
+    $sort_key =~ s/chr//i;
+
+    $sort_key =~ s/^X(.*)/99$1/;
+    $sort_key =~ s/^Y(.*)/99$1/;
+    $sort_key =~ s/^Z(.*)/999$1/;
+    $sort_key =~ s/^M(.*)/9999$1/;
+    $sort_key =~ s/^U(.*)/99999$1/;
+
+    $count = $sort_key =~ tr/_//;
+
+    $sort_key =~ s/_.*/"999999" x $count/ex;
+
+    push @data_list, [ $elem, $data_hash{ $elem }, $sort_key ];
+}
+
+@data_list = sort { $a->[ 2 ] <=> $b->[ 2 ] } @data_list;
+
+$result = Maasha::Plot::histogram_chrdist( \@data_list, $options );
+
+$fh = Maasha::Biopieces::write_stream( $options->{ "data_out" } );
+
+print $fh "$_\n" foreach @{ $result };
+
+close $fh;
+
+Maasha::Biopieces::close_stream( $in );
+Maasha::Biopieces::close_stream( $out );
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+BEGIN
+{
+    Maasha::Biopieces::status_set();
+}
+
+
+END
+{
+    Maasha::Biopieces::status_log();
+}
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+__END__

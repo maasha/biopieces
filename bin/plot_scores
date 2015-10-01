@@ -1,0 +1,113 @@
+#!/usr/bin/env ruby
+
+# Copyright (C) 2007-2012 Martin A. Hansen.
+
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+
+# http://www.gnu.org/copyleft/gpl.html
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+# Plot a histogram of mean sequence quality scores.
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+require 'maasha/biopieces'
+require 'maasha/seq'
+require 'gnuplot'
+require 'narray'
+
+terminals = "dumb,x11,aqua,post,pdf,png,svg"
+title     = "Mean Quality Scores"
+xlabel    = "Sequence position"
+ylabel    = "Mean score"
+
+casts = []
+casts << {:long=>'no_stream', :short=>'x', :type=>'flag',   :mandatory=>false, :default=>nil,    :allowed=>nil,       :disallowed=>nil}
+casts << {:long=>'count',     :short=>'c', :type=>'flag',   :mandatory=>false, :default=>nil,    :allowed=>nil,       :disallowed=>nil}
+casts << {:long=>'data_out',  :short=>'o', :type=>'file',   :mandatory=>false, :default=>nil,    :allowed=>nil,       :disallowed=>nil}
+casts << {:long=>'terminal',  :short=>'t', :type=>'string', :mandatory=>false, :default=>'dumb', :allowed=>terminals, :disallowed=>nil}
+casts << {:long=>'title',     :short=>'T', :type=>'string', :mandatory=>false, :default=>title,  :allowed=>nil,       :disallowed=>nil}
+casts << {:long=>'xlabel',    :short=>'X', :type=>'string', :mandatory=>false, :default=>xlabel, :allowed=>nil,       :disallowed=>nil}
+casts << {:long=>'ylabel',    :short=>'Y', :type=>'string', :mandatory=>false, :default=>ylabel, :allowed=>nil,       :disallowed=>nil}
+
+options = Biopieces.options_parse(ARGV, casts)
+
+SCORES_MAX = 100_000
+
+scores_vec = NArray.int(SCORES_MAX)
+count_vec  = NArray.int(SCORES_MAX)
+max        = 0
+
+Biopieces.open(options[:stream_in], options[:stream_out]) do |input, output|
+  input.each_record do |record|
+    if record[:SCORES]
+      scores = record[:SCORES]
+
+      if scores.length > 0
+        raise BiopiecesError, "score string too long: #{scores.length} > #{SCORES_MAX}" if scores.length > SCORES_MAX
+
+        scores_vec[0 ... scores.length] += NArray.to_na(scores, "byte") - Seq::SCORE_BASE
+        count_vec[0 ... scores.length]  += 1
+
+        max = scores.length if scores.length > max
+      end
+    end
+
+    output.puts record unless options[:no_stream]
+  end
+end
+
+mean_vec   = NArray.sfloat(max)
+mean_vec   = scores_vec[0 ... max].to_f / count_vec[0 ... max]
+count_vec  = count_vec[0 ... max].to_f
+count_vec *= (Seq::SCORE_MAX / count_vec.max(0).to_f)
+
+x  = (1 .. max).to_a
+y1 = mean_vec.to_a
+y2 = count_vec.to_a
+
+Gnuplot.open do |gp|
+  Gnuplot::Plot.new(gp) do |plot|
+    plot.terminal options[:terminal]
+    plot.title    options[:title]
+    plot.xlabel   options[:xlabel]
+    plot.ylabel   options[:ylabel]
+    plot.output   options[:data_out] || "/dev/stderr"
+    plot.xrange   "[#{x.min - 1}:#{x.max + 1}]"
+    plot.yrange   "[#{Seq::SCORE_MIN}:#{Seq::SCORE_MAX}]"
+    plot.style    "fill solid 0.5 border"
+    plot.xtics    "out"
+    plot.ytics    "out"
+    
+    plot.data << Gnuplot::DataSet.new([x, y1]) do |ds|
+      ds.with  = "boxes"
+      ds.title = "mean score"
+    end
+
+    if options[:count]
+      plot.data << Gnuplot::DataSet.new([x, y2]) do |ds|
+        ds.with  = "lines lt rgb \"black\""
+        ds.title = "relative count"
+      end
+    end
+  end
+end
+
+
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+__END__
