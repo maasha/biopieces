@@ -1,8 +1,8 @@
 #!/bin/bash
 
 bp=`basename $0 | sed s/^test_//`
-in="$BP_DIR/bp_test/in/$bp.in"
-out="$BP_DIR/bp_test/out/$bp.out"
+in="$BP_DIR/tests/in/$bp.in"
+out="$BP_DIR/tests/out/$bp.out"
 tmp="$BP_TMP/$USER.$bp.out"
 tmp_dir="$BP_TMP/$USER.test_tmp"
 log_file="$BP_TMP/$USER.test.log"
@@ -56,14 +56,14 @@ function assert_no_diff
 
     rm "$src_sort"
     rm "$dst_sort"
-     
+
     if [ "$diff" != "" ]; then
         echo_red "FAIL"
         log "FAIL"
-    else     
+    else
         echo_green "OK"
         log "OK"
-    fi     
+    fi
 }
 
 # Function to assert no difference between the content
@@ -169,7 +169,7 @@ function test_perl
         echo $error | sed "s/, stopped.*//"
         echo_red "FAIL"
         exit
-    fi  
+    fi
 }
 
 # Function to test if a given Perl module is installed.
@@ -201,7 +201,7 @@ function test_ruby
         echo $error | sed "s/.*: //"
         echo_red "FAIL"
         exit
-    fi  
+    fi
 }
 
 # Function to test if a given Ruby gem is installed.
