@@ -230,7 +230,7 @@ class Casts < Array
     check_values
     check_duplicates
   end
-  
+
   # Check if all mandatory keys are present in casts and raise if not.
   def check_keys
     @cast_list.each do |cast|
@@ -259,7 +259,7 @@ class Casts < Array
       raise CastError, "Illegal cast of long: '#{cast[:long]}'"
     end
   end
-  
+
   # Check if the values to short are legal and raise if not.
   def check_val_short(cast)
     unless cast[:short].is_a? String and cast[:short].length == 1
@@ -400,7 +400,7 @@ class OptionHandler
 
   # Given the script name determine the path of the wiki file with the usage info.
   def wiki_path
-    path = File.join(ENV["BP_DIR"], "bp_usage", File.basename(@script_path)) + ".wiki"
+    path = File.join(ENV["BP_DIR"], "wiki", File.basename(@script_path)) + ".md"
     raise "No such wiki file: #{path}" unless File.file? path
     path
   end
@@ -466,7 +466,7 @@ class OptionHandler
       if cast[:type] == 'files' or cast[:type] == 'files!'
         if @options[cast[:long]]
           files = []
-        
+
           @options[cast[:long]].each do |path|
             if path.include? "*"
               Dir.glob(path).each do |file|
@@ -496,7 +496,7 @@ class OptionHandler
       options_check_disallowed(cast)
     end
   end
-  
+
   # Check if a mandatory option is set and raise if it isn't.
   def options_check_mandatory(cast)
     if cast[:mandatory]
@@ -512,7 +512,7 @@ class OptionHandler
       end
     end
   end
-  
+
   # Check uint type option and raise if not an unsinged integer.
   def options_check_uint(cast)
     if cast[:type] == 'uint' and @options[cast[:long]]
@@ -538,24 +538,24 @@ class OptionHandler
       end
     end
   end
-  
+
   # Check dir! type argument and raise if directory don't exist.
   def options_check_dir(cast)
     if cast[:type] == 'dir!' and @options[cast[:long]]
       raise ArgumentError, "No such directory: '#{@options[cast[:long]]}'" unless File.directory? @options[cast[:long]]
     end
   end
-  
+
   # Check options and raise unless allowed.
   def options_check_allowed(cast)
     if cast[:allowed] and @options[cast[:long]]
       allowed_hash = {}
       cast[:allowed].split(',').each { |a| allowed_hash[a.to_s] = 1 }
-  
+
       raise ArgumentError, "Argument '#{@options[cast[:long]]}' to --#{cast[:long]} not allowed" unless allowed_hash[@options[cast[:long]].to_s]
     end
   end
-  
+
   # Check disallowed argument values and raise if disallowed.
   def options_check_disallowed(cast)
     if cast[:disallowed] and @options[cast[:long]]
@@ -625,7 +625,7 @@ class Status
     end
 
     elap     = time_diff(time0, time1)
-    command  = [script, args].join(" ") 
+    command  = [script, args].join(" ")
     log_file = File.join(ENV["BP_LOG"], "biopieces.log")
 
     File.open(log_file, "a") do |fh|
@@ -638,7 +638,7 @@ class Status
   def delete
     File.delete(path)
   end
-  
+
   private
 
   # Path to status file
@@ -685,4 +685,3 @@ end
 
 
 __END__
-
