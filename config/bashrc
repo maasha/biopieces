@@ -36,7 +36,7 @@ export RUBYLIB="$RUBYLIB:$BP_RUBY/lib"
 
 ### Some useful aliases.
 
-alias bp_test="$BP_DIR/bp_test/test_all"
+alias bp_test="$BP_DIR/tests/test_all"
 
 ### >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 
