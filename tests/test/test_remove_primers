@@ -1,6 +1,6 @@
 #!/bin/bash
 
-source "$BP_DIR/bp_test/lib/test.sh"
+source "$BP_DIR/tests/lib/test.sh"
 
 run "$bp -f ACTGAGCTAGCAGCGGTGCG -r TGCTGGACTGGGTGGAGCAC -m 0 -i 0 -d 0 -I $in -O $tmp"
 assert_no_diff $tmp $out.1

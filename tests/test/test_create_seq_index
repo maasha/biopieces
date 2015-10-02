@@ -1,6 +1,6 @@
 #!/bin/bash
 
-source "$BP_DIR/bp_test/lib/test.sh"
+source "$BP_DIR/tests/lib/test.sh"
 
 run "$bp -I $in -d $tmp_dir -i test -x"
 assert_no_diff "$tmp_dir/test.seq" $out.1

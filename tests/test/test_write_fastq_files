@@ -1,6 +1,6 @@
 #!/bin/bash
 
-source "$BP_DIR/bp_test/lib/test.sh"
+source "$BP_DIR/tests/lib/test.sh"
 
 mkdir $tmp_dir
 run "$bp -I $in -d $tmp_dir -k SEQ_NAME -x"

@@ -281,7 +281,7 @@ class BiopiecesTest < Test::Unit::TestCase
    end
  
    test "Biopieces.options_parse with glob argument expands correctly" do
-     path = File.join(ENV['BP_DIR'], "bp_test")
+     path = File.join(ENV['BP_DIR'], "tests")
      argv    = ["--foo", "#{path}/te*,#{path}/lib/*.sh", "-I", DUMMY_FILE]
      casts   = [{:long=>"foo", :short=>"f", :type=>"files!", :mandatory=>false, :default=>nil, :allowed=>nil, :disallowed=>nil}]
      options = Biopieces.options_parse(argv, casts, SCRIPT_PATH)

@@ -1,6 +1,6 @@
 #!/bin/bash
 
-source "$BP_DIR/bp_test/lib/test.sh"
+source "$BP_DIR/tests/lib/test.sh"
 
 run_quiet "create_seq_index -I $in.1 -d $tmp_dir -i test -x"
 

@@ -1,6 +1,6 @@
 #!/bin/bash
 
-source "$BP_DIR/bp_test/lib/test.sh"
+source "$BP_DIR/tests/lib/test.sh"
 
 run "$bp -I $in.1 -d $tmp_dir -i 'index' -x"
 assert_files_exists "$tmp_dir/index.nin" "$tmp_dir/index.nhr" "$tmp_dir/index.nsq"
