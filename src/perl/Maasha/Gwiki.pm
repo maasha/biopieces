@@ -22,7 +22,7 @@ package Maasha::Gwiki;
 # >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> DESCRIPTION <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 
 
-# Routines for manipulation of Google's wiki format
+# Routines for manipulation of Google's and GitHub's wiki format
 
 
 # >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
@@ -42,13 +42,15 @@ use vars qw ( @ISA @EXPORT );
 # >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 
 
-sub gwiki2ascii
+sub google_wiki2ascii
 {
+    # Depricated
+    #
     # Martin A. Hansen, June 2008.
 
     # Convert Google style wiki as ASCII text lines.
 
-    my ( $wiki,  # wiki data structure 
+    my ( $wiki,  # wiki data structure
        ) = @_;
 
     # Returns a list of lines.
@@ -119,12 +121,14 @@ sub gwiki2ascii
 }
 
 
-sub gwiki_read
+sub google_wiki_read
 {
+    # Depricated
+    #
     # Martin A. Hansen, June 2008.
 
     # Parses a subset of features from Googles wiki format
-    # into a data structure. The structure consists of a 
+    # into a data structure. The structure consists of a
     # list of blocks. Each block consists of one or more lines,
     # represented as triples with the line text, section, and format option.
 
@@ -140,7 +144,7 @@ sub gwiki_read
     $fh = Maasha::Filesys::file_read_open( $file );
 
     @lines = <$fh>;
-    
+
     chomp @lines;
 
     close $fh;
@@ -280,6 +284,226 @@ sub gwiki_read
 }
 
 
+sub github_wiki_read
+{
+    # Martin A. Hansen, October 2015.
+
+    # Parses a subset of features from Github's wiki format
+    # into a data structure. The structure consists of a
+    # list of blocks. Each block consists of one or more lines,
+    # represented as triples with the line text, section, and format option.
+
+    my ( $file,   # file to parse
+       ) = @_;
+
+    # Returns data structure.
+
+    my ( $fh, @lines, $i, $c, $section, $paragraph, @block, @output );
+
+    $fh = Maasha::Filesys::file_read_open( $file );
+
+    @lines = <$fh>;
+
+    chomp @lines;
+
+    close $fh;
+
+    $i = 0;
+    $c = 0;
+
+    while ( $i < @lines )
+    {
+        undef @block;
+
+        if ( $lines[ $i ] =~ /^###\s*(.+)$/ )
+        {
+            $section = $1;
+
+            push @block, {
+                TEXT    => $section,
+                SECTION => $section,
+                FORMAT  => "level_3",
+            };
+        }
+        elsif ( $lines[ $i ] =~ /^##\s*(.+)$/ )
+        {
+            $section = $1;
+
+            push @block, {
+                TEXT    => $section,
+                SECTION => $section,
+                FORMAT  => "subheading",
+            };
+        }
+        elsif ( $lines[ $i ] =~ /^#\s*(.+)$/ )
+        {
+            $section = $1;
+
+            push @block, {
+                TEXT    => $section,
+                SECTION => $section,
+                FORMAT  => "heading",
+            };
+        }
+        elsif ( $lines[ $i ] =~ /^```$/ )
+        {
+            $c = $i + 1;
+
+            while ( $lines[ $c ] !~ /^```$/ )
+            {
+                push @block, {
+                    TEXT    => $lines[ $c ],
+                    SECTION => $section,
+                    FORMAT  => "verbatim",
+                };
+
+                $c++;
+            }
+
+            $c++;
+        }
+        elsif ( $lines[ $i ] =~ /^\s{1,}\*\s*.+/ )
+        {
+            $c = $i;
+
+            while ( $lines[ $c ] =~ /^\s{1,}\*\s*(.+)/ )
+            {
+                push @block, {
+                    TEXT    => $1,
+                    SECTION => $section,
+                    FORMAT  => "itemize"
+                };
+
+                $c++;
+            }
+        }
+        elsif ( $lines[ $i ] =~ /^\s{1,}#\s*.+/ )
+        {
+            $c = $i;
+
+            while ( $lines[ $c ] =~ /^\s{1,}#\s*(.+)/ )
+            {
+                push @block, {
+                    TEXT    => $1,
+                    SECTION => $section,
+                    FORMAT  => "enumerate"
+                };
+
+                $c++;
+            }
+        }
+        elsif ( $lines[ $i ] !~ /^\s*$/ )
+        {
+            undef $paragraph;
+
+            $c = $i;
+
+            while ( defined $lines[ $c ] and $lines[ $c ] !~ /^\s*$/ )
+            {
+                $paragraph .= " $lines[ $c ]";
+
+                $c++;
+            }
+
+            push @block, {
+                TEXT    => $paragraph,
+                SECTION => $section,
+                FORMAT  => "paragraph",
+            };
+        }
+        elsif ( $lines[ $i ] =~ /^\s*$/ )
+        {
+            push @block, {
+                TEXT    => "",
+                SECTION => $section,
+                FORMAT  => "whitespace",
+            };
+        }
+
+        push @output, [ @block ], if @block;
+
+        if ( $c > $i ) {
+            $i = $c;
+        } else {
+            $i++;
+        }
+    }
+
+    return wantarray ? @output : \@output;
+}
+
+
+sub github_wiki2ascii
+{
+    # Martin A. Hansen, October 2015.
+
+    # Convert Github style wiki as ASCII text lines.
+
+    my ( $wiki,  # wiki data structure
+       ) = @_;
+
+    # Returns a list of lines.
+
+    my ( $block, $triple, $line, @lines, $i );
+
+    foreach $block ( @{ $wiki } )
+    {
+        if ( $block->[ 0 ]->{ 'FORMAT' } eq "heading" )
+        {
+            push @lines, text_underline( text_bold( "\n$block->[ 0 ]->{ 'TEXT' }" ) );
+        }
+        elsif ( $block->[ 0 ]->{ 'FORMAT' } eq "subheading" )
+        {
+            push @lines, text_bold( "$block->[ 0 ]->{ 'TEXT' }" );
+        }
+        elsif ( $block->[ 0 ]->{ 'FORMAT' } eq "level_3" )
+        {
+            push @lines, "$block->[ 0 ]->{ 'TEXT' }";
+        }
+        elsif ( $block->[ 0 ]->{ 'FORMAT' } eq "verbatim" )
+        {
+            map { push @lines, text_white( "   $_->{ 'TEXT' }" ) } @{ $block };
+        }
+        elsif ( $block->[ 0 ]->{ 'FORMAT' } eq "itemize" )
+        {
+            for ( $i = 0; $i < @{ $block }; $i++ ) {
+                push @lines, "   * $block->[ $i ]->{ 'TEXT' }";
+            }
+        }
+        elsif ( $block->[ 0 ]->{ 'FORMAT' } eq "enumerate" )
+        {
+            for ( $i = 0; $i < @{ $block }; $i++ ) {
+                push @lines, "   " . ( $i + 1 ) . ". $block->[ $i ]->{ 'TEXT' }";
+            }
+        }
+        elsif ( $block->[ 0 ]->{ 'FORMAT' } eq "paragraph" )
+        {
+            foreach $triple ( @{ $block } )
+            {
+                $line = $triple->{ 'TEXT' };
+
+                $line =~ s/!(\w)/$1/g;
+                $line =~ s/^\s*//;
+                $line =~ s/\s*$//;
+                $line =~ s/\s+/ /g;
+                $line =~ tr/`//d;
+                $line =~ s/\[\[(\w+)\]\]/&text_underline($1)/ge;
+                $line =~ s/\*(\w+)\*/&text_bold($1)/ge           if $line =~ /(^| )\*\w+\*( |$)/;
+                $line =~ s/_(\w+)_/&text_underline($1)/ge        if $line =~ /(^| )_\w+_( |$)/;
+
+                push @lines, $_ foreach Maasha::Common::wrap_line( $line, 80 );
+            }
+        }
+        elsif ( $block->[ 0 ]->{ 'FORMAT' } eq "whitespace" )
+        {
+            push @lines, "";
+        }
+    }
+
+    return wantarray ? @lines : \@lines;
+}
+
+
 sub text_bold
 {
     my ( $txt,
@@ -297,6 +521,7 @@ sub text_underline
     return colored( $txt, "underline" );
 }
 
+
 sub text_white
 {
     my ( $txt,
@@ -307,4 +532,3 @@ sub text_white
 
 
 # >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
-
