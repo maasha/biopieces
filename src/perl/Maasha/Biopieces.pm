@@ -172,13 +172,13 @@ sub read_stream
     my ( $fh );
 
     if ( not -t STDIN ) {
-        $fh = Maasha::Filesys::stdin_read(); 
+        $fh = Maasha::Filesys::stdin_read();
     } elsif ( not $file ) {
         # Maasha::Common::error( qq(no data stream) );
     } else {
         $fh = Maasha::Filesys::file_read_open( $file );
     }
-    
+
     return $fh;
 }
 
@@ -232,7 +232,7 @@ sub get_record
     my ( $fh,   # handle to stream
        ) = @_;
 
-    # Returns a hash. 
+    # Returns a hash.
 
     my ( $block, @lines, $line, $key, $value, %record );
 
@@ -415,10 +415,10 @@ sub check_print_usage
         {
             if ( not ( exists $options{ 'stream_in' } or $options{ 'data_in' } ) )
             {
-                if ( scalar keys %options == 0 ) 
+                if ( scalar keys %options == 0 )
                 {
-                    $wiki = $ENV{ 'BP_DIR' } . "/bp_usage/$script.wiki";
-               
+                    $wiki = $ENV{ 'BP_DIR' } . "/wiki/$script.md";
+
                     if ( $help ) {
                         `print_wiki --data_in=$wiki --help`;
                     } elsif ( $script =~ /^(list_biopieces|list_genomes|list_mysql_databases|biostat)$/ ) {
@@ -734,7 +734,7 @@ sub sig_handler
     # Removes temporary directory and exits gracefully.
     # This subroutine is meant to be run always as the last
     # thing even if a script is dies or is interrupted
-    # or killed. 
+    # or killed.
 
     my ( $sig,   # signal from the %SIG
        ) = @_;
@@ -837,7 +837,7 @@ sub get_tmpdir
 
     $path = bp_tmp() . "/" . join( "_", $user, $sid, $pid, "bp_tmp" );
     $file = bp_tmp() . "/" . join( ".", $user, $script, $pid ) . ".status";
-    
+
     $fh   = Maasha::Filesys::file_read_open( $file );
     flock($fh, 1);
     $line = <$fh>;
@@ -901,7 +901,7 @@ sub bp_tmp
 
     unless ( -d $path ) { # No BP_TMP so we create it
         mkdir $path or die qq(failed to create dir "$path": $!);
-    }   
+    }
 
     return $path;
 }
