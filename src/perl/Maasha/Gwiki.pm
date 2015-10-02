@@ -377,11 +377,11 @@ sub github_wiki_read
                 $c++;
             }
         }
-        elsif ( $lines[ $i ] =~ /^\s{1,}#\s*.+/ )
+        elsif ( $lines[ $i ] =~ /^\s{1,}1\.\s*.+/ )
         {
             $c = $i;
 
-            while ( $lines[ $c ] =~ /^\s{1,}#\s*(.+)/ )
+            while ( $lines[ $c ] =~ /^\s{1,}1\.\s*(.+)/ )
             {
                 push @block, {
                     TEXT    => $1,
