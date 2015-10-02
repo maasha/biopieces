@@ -38,23 +38,23 @@ use Maasha::Gwiki;
 
 my ( $options, $default, $wiki, $lines );
 
-$default = $ENV{ 'BP_DIR' } . "/bp_usage/" . ( split "/", $0 )[ -1 ]. ".wiki";
+$default = $ENV{ 'BP_DIR' } . "/wiki/" . ( split "/", $0 )[ -1 ]. ".md";
 
 $options = Maasha::Biopieces::parse_options(
     [
         { long => 'data_in', short => 'i', type => 'file!', mandatory => 'no', default => $default, allowed => undef, disallowed => undef },
-    ]   
+    ]
 );
 
-$wiki = Maasha::Gwiki::gwiki_read( $options->{ 'data_in' } );
+$wiki = Maasha::Gwiki::github_wiki_read( $options->{ 'data_in' } );
 
 ( $wiki->[ 2 ], $wiki->[ 3 ], $wiki->[ 0 ], $wiki->[ 1 ] ) = ( $wiki->[ 0 ], $wiki->[ 1 ], $wiki->[ 2 ], $wiki->[ 3 ] );
 
 if ( not $options->{ "help" } ) {
-    @{ $wiki } = grep { $_->[ 0 ]->{ 'SECTION' } =~ /Biopiece|summary|Usage|Options|Help/ } @{ $wiki };
+    @{ $wiki } = grep { $_->[ 0 ]->{ 'SECTION' } =~ /Biopiece|Usage|Options|Help/ } @{ $wiki };
 }
 
-$lines = Maasha::Gwiki::gwiki2ascii( $wiki );
+$lines = Maasha::Gwiki::github_wiki2ascii( $wiki );
 
 print STDERR "$_\n" foreach @{ $lines };
 
