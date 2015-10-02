@@ -1,6 +1,6 @@
 #!/bin/bash
 
-source "$BP_DIR/bp_test/lib/test.sh"
+source "$BP_DIR/tests/lib/test.sh"
 
 if [ -f $log_file ]; then
     rm $log_file
@@ -38,8 +38,8 @@ test_aux_program "vmatch"
 count=0
 time0=`date +%s`
 
-for i in `ls "$BP_DIR/bp_test/test/"`; do
-    "$BP_DIR/bp_test/test/$i"
+for i in `ls "$BP_DIR/tests/test/"`; do
+    "$BP_DIR/tests/test/$i"
     count=$[ $count + 1 ]
 done
 
