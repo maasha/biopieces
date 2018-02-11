@@ -2,7 +2,7 @@ title: www.biopieces.org
 description: Biopieces is a bioinformatic framework of tools easily used and easily created.
 google_analytics: UA-390268-5
 show_downloads: true
-theme: jekyll-theme-cayman
+theme: jekyll-theme-minimal
 
 gems:
   - jekyll-mentions
