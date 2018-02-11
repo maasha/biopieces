@@ -42,7 +42,7 @@ The advantage of the Biopieces is that a user can easily solve simple and comple
 
 There are currently ~190 Biopieces.
 
-To learn more about Biopieces have a look at the Biopieces Introduction.
+To learn more about Biopieces have a look at the Biopieces [Introduction](https://github.com/maasha/biopieces/wiki/Introduction).
 
 To browse the available Biopieces go to the Biopieces [Wiki](http://github.com/maasha/biopieces/wiki).
 
