@@ -35,7 +35,8 @@ write_fastq -o data_clean.fq |                        #  Write the cleaned data 
 plot_scores -t png -o scores_clean.png |              #  Plot scores after cleaning.
 plot_distribution -k SEQ_LEN -t png -o lengths.png |  #  Plot sequence length distribution.
 bowtie_seq -c 24 -g hg19 -m 2 |                       #  Map sequences to the human genome with Bowtie.
-upload_to_ucsc –d hg19 –t my_data –x                  #  Upload the results to the UCSC Genome Browser.                                                                                     ```
+upload_to_ucsc –d hg19 –t my_data –x                  #  Upload the results to the UCSC Genome Browser.
+```
 
 The advantage of the Biopieces is that a user can easily solve simple and complex tasks without having any programming experience. Moreover, since the data format used to pass data between Biopieces is text based, different developers can quickly create new Biopieces in their favorite programming language - and all the Biopieces will maintain compatibility. Finally, templates exist for creating new Biopieces in Perl and Ruby.
 
