@@ -30,7 +30,6 @@ package Maasha::Seq;
 
 use warnings;
 use strict;
-use POSIX qw( islower );
 use Maasha::Common;
 use Data::Dumper;
 use IPC::Open2;
@@ -887,7 +886,7 @@ sub res_mutate
         $new = $alph->[ int( rand( $alph_len ) ) ];
     }
 
-    return POSIX::islower( $res ) ? lc $new : uc $new;
+    return $new;
 }
 
 
